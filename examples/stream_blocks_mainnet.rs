@@ -1,27 +1,10 @@
-use std::collections::{HashMap, HashSet};
-use std::fmt::{Display, Formatter};
-use std::ops::{Add, Deref, Sub};
-use std::pin::{pin, Pin};
-use anyhow::{bail, Context};
-use async_stream::stream;
-use futures::{Stream, StreamExt};
-use itertools::{Itertools};
-
-use log::{debug, error, info, warn};
-use solana_sdk::clock::Slot;
-use solana_sdk::commitment_config::CommitmentConfig;
-use tokio::{select};
-use tokio::sync::broadcast::{Receiver, Sender};
-use tokio::task::{JoinHandle, JoinSet};
-use tokio::time::{sleep, Duration, timeout, Instant, sleep_until};
-use yellowstone_grpc_client::GeyserGrpcClient;
-use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequestFilterBlocks, SubscribeRequestFilterBlocksMeta, SubscribeUpdate, SubscribeUpdateBlock, SubscribeUpdateBlockMeta};
-use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
+use log::{info};
+use tokio::sync::broadcast::{Receiver};
+use tokio::time::{sleep, Duration};
+use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeUpdateBlock};
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{create_multiplex, GrpcSourceConfig};
 
-
-fn start_example_consumer(blocks_notifier: Receiver<SubscribeUpdateBlock>) {
+fn start_example_consumer(blocks_notifier: Receiver<Box<SubscribeUpdateBlock>>) {
     tokio::spawn(async move {
         let mut blocks_notifier = blocks_notifier;
         loop {

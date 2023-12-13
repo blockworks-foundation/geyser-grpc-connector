@@ -3,28 +3,16 @@
 //     rpc_polling::vote_accounts_and_cluster_info_polling::poll_vote_accounts_and_cluster_info,
 // };
 use anyhow::{bail, Context};
-use futures::{Stream, StreamExt};
-use itertools::Itertools;
+use futures::{StreamExt};
+
 use solana_sdk::{
-    borsh0_10::try_from_slice_unchecked,
     commitment_config::CommitmentConfig,
-    compute_budget::{self, ComputeBudgetInstruction},
-    hash::Hash,
-    instruction::CompiledInstruction,
-    message::{
-        v0::{self, MessageAddressTableLookup},
-        MessageHeader, VersionedMessage,
-    },
-    pubkey::Pubkey,
-    signature::Signature,
-    transaction::TransactionError,
 };
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap};
 use tokio::sync::broadcast::Sender;
 use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::prelude::{
-    subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequestFilterBlocks,
-    SubscribeRequestFilterSlots, SubscribeUpdateBlock,
+    subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequestFilterBlocks, SubscribeUpdateBlock,
 };
 
 pub fn create_block_processing_task(
@@ -44,7 +32,7 @@ pub fn create_block_processing_task(
         },
     );
 
-    let commitment_config = match commitment_level {
+    let _commitment_config = match commitment_level {
         CommitmentLevel::Confirmed => CommitmentConfig::confirmed(),
         CommitmentLevel::Finalized => CommitmentConfig::finalized(),
         CommitmentLevel::Processed => CommitmentConfig::processed(),
