@@ -92,6 +92,7 @@ pub fn create_multiplex(
     })
 }
 
+// look Ma, no Clone!
 #[derive(Debug)]
 enum BlockCmd {
     ForwardBlock(Box<SubscribeUpdateBlock>),
@@ -209,7 +210,7 @@ async fn create_geyser_reconnecting_stream(
                 }
             } // -- production loop
 
-            warn!("stream consumer loop terminated for {}", label);
+            warn!("stream consumer loop {} terminated", label);
         } // -- main loop
     } // -- stream!
 
