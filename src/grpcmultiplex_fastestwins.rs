@@ -7,11 +7,12 @@ use itertools::{Itertools};
 use log::{debug, info, warn};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::commitment_config::CommitmentLevel;
 use tokio::{select};
 use tokio::sync::broadcast::{Sender};
 use tokio::time::{Duration, Instant, sleep_until};
 use yellowstone_grpc_client::GeyserGrpcClient;
-use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequestFilterBlocks, SubscribeUpdate, SubscribeUpdateBlock};
+use yellowstone_grpc_proto::geyser::{SubscribeRequestFilterBlocks, SubscribeUpdate, SubscribeUpdateBlock};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 
@@ -19,31 +20,21 @@ use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 // use solana_lite_rpc_core::AnyhowJoinHandle;
 // use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 
-
 // TODO map SubscribeUpdateBlock
-pub fn create_multiplex(
+pub async fn create_multiplex(
     grpc_sources: Vec<GrpcSourceConfig>,
-    commitment_level: CommitmentLevel,
+    commitment_config: CommitmentConfig,
     block_sx: Sender<Box<SubscribeUpdateBlock>>,
 ) -> tokio::task::JoinHandle<anyhow::Result<()>> {
     assert!(
-        commitment_level == CommitmentLevel::Confirmed
-            || commitment_level == CommitmentLevel::Finalized,
+        commitment_config == CommitmentConfig::confirmed()
+            || commitment_config == CommitmentConfig::finalized(),
         "Only CONFIRMED and FINALIZED is supported");
     // note: PROCESSED blocks are not sequential in presense of forks; this will break the logic
 
     if grpc_sources.is_empty() {
         panic!("Must have at least one source");
     }
-
-    let commitment_config = match commitment_level {
-        CommitmentLevel::Confirmed => CommitmentConfig::confirmed(),
-        CommitmentLevel::Finalized => CommitmentConfig::finalized(),
-        // not used, not supported!
-        CommitmentLevel::Processed => CommitmentConfig::processed(),
-    };
-
-    
 
     tokio::spawn(async move {
         info!("Starting multiplexer with {} sources: {}",
@@ -53,13 +44,12 @@ pub fn create_multiplex(
         let mut futures = futures::stream::SelectAll::new();
         for grpc_source in grpc_sources {
             // note: stream never terminates
-            let stream = create_geyser_reconnecting_stream(grpc_source.clone(), commitment_level).await;
+            let stream = create_geyser_reconnecting_stream(grpc_source.clone(), commitment_config).await;
             futures.push(Box::pin(stream));
         }
 
         let mut current_slot: Slot = 0;
 
-        let _start_stream33 = false;
         'main_loop: loop {
 
             let block_cmd = select! {
@@ -142,7 +132,15 @@ impl GrpcSourceConfig {
 // note: stream never terminates
 async fn create_geyser_reconnecting_stream(
     grpc_source: GrpcSourceConfig,
-    commitment_level: CommitmentLevel) -> impl Stream<Item = SubscribeUpdate> {
+    commitment_config: CommitmentConfig) -> impl Stream<Item = SubscribeUpdate> {
+
+    // solana_sdk -> yellowstone
+    let commitment_level = match commitment_config.commitment {
+        solana_sdk::commitment_config::CommitmentLevel::Confirmed => yellowstone_grpc_proto::prelude::CommitmentLevel::Confirmed,
+        solana_sdk::commitment_config::CommitmentLevel::Finalized => yellowstone_grpc_proto::prelude::CommitmentLevel::Finalized,
+        _ => panic!("Only CONFIRMED and FINALIZED is supported/suggested"),
+    };
+
     let label = grpc_source.label.clone();
     stream! {
         let mut throttle_barrier = Instant::now();

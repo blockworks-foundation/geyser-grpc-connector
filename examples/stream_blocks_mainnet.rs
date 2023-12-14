@@ -37,8 +37,8 @@ pub async fn main() {
 
     create_multiplex(
         vec![green_config, blue_config, toxiproxy_config],
-        CommitmentLevel::Confirmed,
-        block_sx);
+        CommitmentLevel::Finalized,
+        block_sx).await;
 
     start_example_consumer(blocks_notifier);
 
