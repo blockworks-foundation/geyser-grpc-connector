@@ -1,3 +1,6 @@
+/// Deprecated task/channel-based implementation of the multiplexer - use the stream-based one instead
+
+
 use std::collections::{HashMap};
 use std::ops::{Add};
 use anyhow::{Context};

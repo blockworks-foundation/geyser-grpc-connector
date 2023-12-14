@@ -5,7 +5,7 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::sync::broadcast::{Receiver};
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeUpdateBlock};
-use geyser_grpc_connector::grpcmultiplex_fastestwins_channels::{create_multiplex, GrpcSourceConfig};
+use geyser_grpc_connector::experimental::grpcmultiplex_fastestwins_channels::{create_multiplex, GrpcSourceConfig};
 
 fn start_example_consumer(blocks_notifier: Receiver<Box<SubscribeUpdateBlock>>) {
     tokio::spawn(async move {
