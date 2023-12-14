@@ -1,4 +1,5 @@
 use log::{info};
+use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::sync::broadcast::{Receiver};
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeUpdateBlock};
@@ -37,7 +38,7 @@ pub async fn main() {
 
     create_multiplex(
         vec![green_config, blue_config, toxiproxy_config],
-        CommitmentLevel::Finalized,
+        CommitmentConfig::finalized(),
         block_sx).await;
 
     start_example_consumer(blocks_notifier);
