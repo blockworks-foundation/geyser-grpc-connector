@@ -26,14 +26,12 @@ fn start_example_consumer(mut block_stream: impl Stream<Item=ProducedBlock> + Se
 struct ExtractBlock(CommitmentConfig);
 impl FromYellowstoneMapper for ExtractBlock {
     type Target = ProducedBlock;
-    fn extract(&self, update: SubscribeUpdate, current_slot: Slot) -> Option<(Slot, Self::Target)> {
+    fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)> {
         match update.update_oneof {
-            Some(UpdateOneof::Block(update_block_message))
-            if update_block_message.slot > current_slot =>
-                {
-                    let block = map_produced_block(update_block_message, self.0);
-                    Some((block.slot, block))
-                }
+            Some(UpdateOneof::Block(update_block_message)) => {
+                let block = map_produced_block(update_block_message, self.0);
+                Some((block.slot, block))
+            }
             _ => None,
         }
     }
