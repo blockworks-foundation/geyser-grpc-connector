@@ -5,10 +5,10 @@ use log::{info, warn};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
-use std::pin::pin;
+use std::pin::{pin, Pin};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, Duration};
-use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
+use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientError, GeyserGrpcClientResult};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdateBlockMeta;
 use yellowstone_grpc_proto::geyser::{
@@ -16,15 +16,59 @@ use yellowstone_grpc_proto::geyser::{
 };
 use yellowstone_grpc_proto::prelude::SubscribeRequestFilterBlocksMeta;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
-use yellowstone_grpc_proto::tonic::Status;
+use yellowstone_grpc_proto::tonic::{async_trait, Status};
 
-pub trait ExtractBlockFromStream {
-    type Block;
-    fn extract(&self, update: SubscribeUpdate, current_slot: Slot) -> Option<(Slot, Self::Block)>;
-    fn get_block_subscription_filter(&self) -> HashMap<String, SubscribeRequestFilterBlocks>;
-    fn get_blockmeta_subscription_filter(
-        &self,
-    ) -> HashMap<String, SubscribeRequestFilterBlocksMeta>;
+
+#[async_trait]
+trait GrpcConnectionFactory: Clone {
+    // async fn connect() -> GeyserGrpcClientResult<impl Stream<Item=Result<SubscribeUpdate, Status>>+Sized>;
+    async fn connect_and_subscribe(&self) -> GeyserGrpcClientResult<Pin<Box<dyn Stream<Item=Result<SubscribeUpdate, Status>>>>>;
+}
+
+#[derive(Clone)]
+struct SampleConnector {
+    grpc_addr: String,
+    grpc_x_token: Option<String>,
+    tls_config: Option<ClientTlsConfig>,
+}
+
+#[async_trait]
+impl GrpcConnectionFactory for SampleConnector {
+    async fn connect_and_subscribe(&self) -> GeyserGrpcClientResult<Pin<Box<dyn Stream<Item=Result<SubscribeUpdate, Status>>>>> {
+        let mut client = GeyserGrpcClient::connect_with_timeout(
+            self.grpc_addr.clone(),
+            self.grpc_x_token.clone(),
+            self.tls_config.clone(),
+            Some(Duration::from_secs(2)),
+            Some(Duration::from_secs(2)),
+            false,
+        ).await?;
+
+        let subscribe_result = client
+            .subscribe_once(
+                HashMap::new(),
+                Default::default(),
+                HashMap::new(),
+                Default::default(),
+                HashMap::new(),
+                HashMap::new(),
+                Some(CommitmentLevel::Finalized),
+                Default::default(),
+                None,
+            ).await?;
+
+        Ok(Box::pin(subscribe_result))
+    }
+
+}
+
+pub trait FromYellowstoneMapper {
+    type Target;
+    fn extract(&self, update: SubscribeUpdate, current_slot: Slot) -> Option<(Slot, Self::Target)>;
+    // fn get_block_subscription_filter(&self) -> HashMap<String, SubscribeRequestFilterBlocks>;
+    // fn get_blockmeta_subscription_filter(
+    //     &self,
+    // ) -> HashMap<String, SubscribeRequestFilterBlocksMeta>;
 }
 
 struct ExtractBlock(CommitmentConfig);
@@ -36,9 +80,9 @@ pub fn create_multiplex<E>(
     grpc_sources: Vec<GrpcSourceConfig>,
     commitment_config: CommitmentConfig,
     extractor: E,
-) -> impl Stream<Item = E::Block>
+) -> impl Stream<Item = E::Target>
     where
-        E: ExtractBlockFromStream,
+        E: FromYellowstoneMapper,
 {
     assert!(
         commitment_config == CommitmentConfig::confirmed()
@@ -64,10 +108,11 @@ pub fn create_multiplex<E>(
     for grpc_source in grpc_sources {
         futures.push(Box::pin(create_geyser_reconnecting_stream(
             grpc_source.clone(),
-            (
-                extractor.get_block_subscription_filter(),
-                extractor.get_blockmeta_subscription_filter(),
-            ),
+            SampleConnector {
+                grpc_addr: grpc_source.grpc_addr.clone(),
+                grpc_x_token: grpc_source.grpc_x_token.clone(),
+                tls_config: grpc_source.tls_config.clone(),
+            },
             commitment_config,
         )));
     }
@@ -75,16 +120,16 @@ pub fn create_multiplex<E>(
     filter_blocks(futures, extractor)
 }
 
-fn filter_blocks<S, E>(geyser_stream: S, extractor: E) -> impl Stream<Item = E::Block>
+fn filter_blocks<S, E>(geyser_stream: S, mapper: E) -> impl Stream<Item = E::Target>
     where
         S: Stream<Item = Option<SubscribeUpdate>>,
-        E: ExtractBlockFromStream,
+        E: FromYellowstoneMapper,
 {
     let mut current_slot: Slot = 0;
     stream! {
         for await update in geyser_stream {
             if let Some(update) = update {
-                if let Some((new_slot, block)) = extractor.extract(update, current_slot) {
+                if let Some((new_slot, block)) = mapper.extract(update, current_slot) {
                     current_slot = new_slot;
                     yield block;
                 }
@@ -124,10 +169,7 @@ enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
 // note: stream never terminates
 fn create_geyser_reconnecting_stream(
     grpc_source: GrpcSourceConfig,
-    blocks_filters: (
-        HashMap<String, SubscribeRequestFilterBlocks>,
-        HashMap<String, SubscribeRequestFilterBlocksMeta>,
-    ),
+    connection_factory: impl GrpcConnectionFactory, // TODO do we need Send+Sync?
     commitment_config: CommitmentConfig,
 ) -> impl Stream<Item = Option<SubscribeUpdate>> {
     let label = grpc_source.label.clone();
@@ -154,13 +196,30 @@ fn create_geyser_reconnecting_stream(
                         let addr = grpc_source.grpc_addr.clone();
                         let token = grpc_source.grpc_x_token.clone();
                         let config = grpc_source.tls_config.clone();
-                        let (block_filter, blockmeta_filter) = blocks_filters.clone();
+                        // let (block_filter, blockmeta_filter) = blocks_filters.clone();
                         async move {
 
                             let connect_result = GeyserGrpcClient::connect_with_timeout(
                                 addr, token, config,
                                 Some(Duration::from_secs(2)), Some(Duration::from_secs(2)), false).await;
                             let mut client = connect_result?;
+
+                            let mut blocks_subs = HashMap::new();
+                            blocks_subs.insert(
+                                "client".to_string(),
+                                SubscribeRequestFilterBlocks {
+                                    account_include: Default::default(),
+                                    include_transactions: Some(true),
+                                    include_accounts: Some(false),
+                                    include_entries: Some(false),
+                                },
+                            );
+
+                            let mut blocksmeta_subs = HashMap::new();
+                            blocksmeta_subs.insert(
+                                "client".to_string(),
+                                SubscribeRequestFilterBlocksMeta {},
+                            );
 
                             // Connected;
                             let subscribe_result = client
@@ -169,8 +228,8 @@ fn create_geyser_reconnecting_stream(
                                     Default::default(),
                                     HashMap::new(),
                                     Default::default(),
-                                    block_filter,
-                                    blockmeta_filter,
+                                    blocks_subs,
+                                    blocksmeta_subs,
                                     Some(commitment_level),
                                     Default::default(),
                                     None,

@@ -10,7 +10,7 @@ use tokio::sync::broadcast::{Receiver};
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequestFilterBlocks, SubscribeRequestFilterBlocksMeta, SubscribeUpdate, SubscribeUpdateBlock};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use geyser_grpc_connector::grpcmultiplex_fastestwins::{create_multiplex, ExtractBlockFromStream, GrpcSourceConfig};
+use geyser_grpc_connector::grpcmultiplex_fastestwins::{create_multiplex, FromYellowstoneMapper, GrpcSourceConfig};
 use crate::literpc_core_model::{map_produced_block, ProducedBlock};
 
 fn start_example_consumer(mut block_stream: impl Stream<Item=ProducedBlock> + Send + 'static) {
@@ -24,9 +24,9 @@ fn start_example_consumer(mut block_stream: impl Stream<Item=ProducedBlock> + Se
 
 
 struct ExtractBlock(CommitmentConfig);
-impl ExtractBlockFromStream for ExtractBlock {
-    type Block = ProducedBlock;
-    fn extract(&self, update: SubscribeUpdate, current_slot: Slot) -> Option<(Slot, Self::Block)> {
+impl FromYellowstoneMapper for ExtractBlock {
+    type Target = ProducedBlock;
+    fn extract(&self, update: SubscribeUpdate, current_slot: Slot) -> Option<(Slot, Self::Target)> {
         match update.update_oneof {
             Some(UpdateOneof::Block(update_block_message))
             if update_block_message.slot > current_slot =>
@@ -38,24 +38,6 @@ impl ExtractBlockFromStream for ExtractBlock {
         }
     }
 
-    fn get_block_subscription_filter(&self) -> HashMap<String, SubscribeRequestFilterBlocks> {
-        let mut blocks_subs = HashMap::new();
-        blocks_subs.insert(
-            "client".to_string(),
-            SubscribeRequestFilterBlocks {
-                account_include: Default::default(),
-                include_transactions: Some(true),
-                include_accounts: Some(false),
-                include_entries: Some(false),
-            },
-        );
-        blocks_subs
-    }
-    fn get_blockmeta_subscription_filter(
-        &self,
-    ) -> HashMap<String, SubscribeRequestFilterBlocksMeta> {
-        HashMap::new()
-    }
 }
 
 
