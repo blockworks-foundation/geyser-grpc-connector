@@ -5,7 +5,6 @@ use derive_more::Display;
 use futures::StreamExt;
 
 use log::{debug, error, info, warn};
-use serde::Serializer;
 use tokio::select;
 use tokio::sync::broadcast::{Receiver, Sender};
 use tokio::time::{Duration, sleep};
