@@ -1,7 +1,7 @@
 use async_stream::stream;
 use futures::{Stream, StreamExt};
 use itertools::Itertools;
-use log::{info, warn};
+use log::{debug, info, warn};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
@@ -120,12 +120,18 @@ fn map_updates<S, E>(geyser_stream: S, mapper: E) -> impl Stream<Item = E::Targe
     let mut tip: Slot = 0;
     stream! {
         for await update in geyser_stream {
-            if let Some(update) = update {
-                if let Some((proposed_slot, block)) = mapper.map_yellowstone_update(update) {
-                    if proposed_slot > tip {
-                        tip = proposed_slot;
-                        yield block;
+            match update {
+                Some(update) => {
+                    // take only the update messages we want
+                    if let Some((proposed_slot, block)) = mapper.map_yellowstone_update(update) {
+                        if proposed_slot > tip {
+                            tip = proposed_slot;
+                            yield block;
+                        }
                     }
+                }
+                None => {
+                    debug!("Stream sent None"); // TODO waht does that mean?
                 }
             }
         }
@@ -159,11 +165,12 @@ enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
     WaitReconnect,
 }
 
-// Connect to Geyser and return a generic stream of SubscribeUpdate
+// Takes geyser filter for geyser, connect to Geyser and return a generic stream of SubscribeUpdate
 // note: stream never terminates
 fn create_geyser_reconnecting_stream(
     grpc_source: GrpcSourceConfig,
     commitment_config: CommitmentConfig,
+    // TODO do we want Option<SubscribeUpdate>
 ) -> impl Stream<Item = Option<SubscribeUpdate>> {
     let label = grpc_source.label.clone();
 
