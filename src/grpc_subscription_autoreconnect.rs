@@ -4,6 +4,7 @@ use log::{debug, info, trace, warn};
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicI32, Ordering};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
@@ -67,15 +68,17 @@ pub fn create_geyser_reconnecting_stream(
         _ => panic!("Only CONFIRMED and FINALIZED is supported/suggested"),
     };
 
-    // NOT_CONNECTED; CONNECTING
     let mut state = ConnectionState::NotConnected;
+    let connection_attempts = AtomicI32::new(0);
 
     // in case of cancellation, we restart from here:
     // thus we want to keep the progression in a state object outside the stream! makro
     stream! {
-        loop{
+        loop {
             let yield_value;
+
             (state, yield_value) = match state {
+
                 ConnectionState::NotConnected => {
 
                     let connection_task = tokio::spawn({
@@ -83,6 +86,7 @@ pub fn create_geyser_reconnecting_stream(
                         let token = grpc_source.grpc_x_token.clone();
                         let config = grpc_source.tls_config.clone();
                         // let (block_filter, blockmeta_filter) = blocks_filters.clone();
+                        info!("Connecting attempt #{} to {}", connection_attempts.fetch_add(1, Ordering::Relaxed), addr);
                         async move {
 
                             let connect_result = GeyserGrpcClient::connect_with_timeout(
@@ -128,6 +132,7 @@ pub fn create_geyser_reconnecting_stream(
 
                     (ConnectionState::Connecting(connection_task), None)
                 }
+
                 ConnectionState::Connecting(connection_task) => {
                     let subscribe_result = connection_task.await;
 
@@ -144,11 +149,12 @@ pub fn create_geyser_reconnecting_stream(
                     }
 
                 }
+
                 ConnectionState::Ready(mut geyser_stream) => {
 
                     match geyser_stream.next().await {
                         Some(Ok(update_message)) => {
-                            trace!("> update message on {}", label);
+                            trace!("> recv update message from {}", label);
                             (ConnectionState::Ready(geyser_stream), Some(update_message))
                         }
                         Some(Err(tonic_status)) => {
@@ -164,12 +170,15 @@ pub fn create_geyser_reconnecting_stream(
                     }
 
                 }
+
                 ConnectionState::WaitReconnect => {
-                    // TODO implement backoff
+                    info!("Waiting a bit, then connect to {}", label);
                     sleep(Duration::from_secs(1)).await;
                     (ConnectionState::NotConnected, None)
                 }
+
             }; // -- match
+
             yield yield_value
         }
 

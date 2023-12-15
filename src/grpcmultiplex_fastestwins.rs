@@ -13,14 +13,15 @@ pub trait FromYellowstoneMapper {
     fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)>;
 }
 
-pub fn create_multiplex<E>(
-    // TODO provide list of streams
-    grpc_sources: Vec<GrpcSourceConfig>,
+/// use streams created by ``create_geyser_reconnecting_stream``
+/// note: this is agnostic to the type of the stream
+pub fn create_multiplex<M>(
+    grpc_source_streams: Vec<impl Stream<Item = Option<SubscribeUpdate>>>,
     commitment_config: CommitmentConfig,
-    extractor: E,
-) -> impl Stream<Item = E::Target>
+    mapper: M,
+) -> impl Stream<Item = M::Target>
 where
-    E: FromYellowstoneMapper,
+    M: FromYellowstoneMapper,
 {
     assert!(
         commitment_config == CommitmentConfig::confirmed()
@@ -29,29 +30,23 @@ where
     );
     // note: PROCESSED blocks are not sequential in presense of forks; this will break the logic
 
-    if grpc_sources.is_empty() {
+    if grpc_source_streams.is_empty() {
         panic!("Must have at least one source");
     }
 
     info!(
-        "Starting multiplexer with {} sources: {}",
-        grpc_sources.len(),
-        grpc_sources
-            .iter()
-            .map(|source| source.label.clone())
-            .join(", ")
+        "Starting multiplexer with {} sources",
+        grpc_source_streams.len(),
     );
 
+    // use merge
     let mut futures = futures::stream::SelectAll::new();
 
-    for grpc_source in grpc_sources {
-        futures.push(Box::pin(create_geyser_reconnecting_stream(
-            grpc_source.clone(),
-            commitment_config,
-        )));
+    for grpc_source in grpc_source_streams {
+        futures.push(Box::pin(grpc_source));
     }
 
-    map_updates(futures, extractor)
+    map_updates(futures, mapper)
 }
 
 fn map_updates<S, E>(geyser_stream: S, mapper: E) -> impl Stream<Item = E::Target>
