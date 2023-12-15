@@ -1,4 +1,3 @@
-use crate::grpc_subscription_autoreconnect::Message::Connecting;
 use async_stream::stream;
 use futures::{Stream, StreamExt};
 use log::{debug, info, log, trace, warn, Level};
@@ -8,6 +7,7 @@ use std::ops::{Add, Sub};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
+use anyhow::Context;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, sleep_until, timeout};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
@@ -69,7 +69,8 @@ impl GrpcSourceConfig {
 
 pub enum Message {
     GeyserSubscribeUpdate(SubscribeUpdate),
-    Connecting,
+    // connect (attempt=1) or reconnect(attempt>1)
+    Connecting(u32),
 }
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
@@ -79,10 +80,33 @@ enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
     WaitReconnect(u32),
 }
 
+#[derive(Clone)]
+pub enum GeyserFilter {
+    Blocks(SubscribeRequestFilterBlocks),
+    BlocksMeta(SubscribeRequestFilterBlocksMeta),
+}
+
+impl GeyserFilter {
+    pub fn blocks() -> Self {
+        Self::Blocks(SubscribeRequestFilterBlocks {
+            account_include: Default::default(),
+            include_transactions: Some(true),
+            include_accounts: Some(false),
+            include_entries: Some(false),
+        })
+    }
+    pub fn blocks_meta() -> Self {
+        Self::BlocksMeta(SubscribeRequestFilterBlocksMeta {
+        })
+    }
+}
+
+
 // Takes geyser filter for geyser, connect to Geyser and return a generic stream of SubscribeUpdate
 // note: stream never terminates
 pub fn create_geyser_reconnecting_stream(
     grpc_source: GrpcSourceConfig,
+    filter: GeyserFilter,
     commitment_config: CommitmentConfig,
 ) -> impl Stream<Item = Message> {
     let label = grpc_source.label.clone();
@@ -118,6 +142,7 @@ pub fn create_geyser_reconnecting_stream(
                         let connect_timeout = grpc_source.timeouts.as_ref().map(|t| t.connect_timeout);
                         let request_timeout = grpc_source.timeouts.as_ref().map(|t| t.request_timeout);
                         let subscribe_timeout = grpc_source.timeouts.as_ref().map(|t| t.subscribe_timeout);
+                        let filter = filter.clone();
                         log!(if attempt > 1 { Level::Warn } else { Level::Debug }, "Connecting attempt #{} to {}", attempt, addr);
                         async move {
 
@@ -129,54 +154,54 @@ pub fn create_geyser_reconnecting_stream(
                                 .await;
                             let mut client = connect_result?;
 
-                            // TODO make filter configurable for caller
                             let mut blocks_subs = HashMap::new();
-                            blocks_subs.insert(
-                                "client".to_string(),
-                                SubscribeRequestFilterBlocks {
-                                    account_include: Default::default(),
-                                    include_transactions: Some(true),
-                                    include_accounts: Some(false),
-                                    include_entries: Some(false),
-                                },
-                            );
-
                             let mut blocksmeta_subs = HashMap::new();
-                            blocksmeta_subs.insert(
-                                "client".to_string(),
-                                SubscribeRequestFilterBlocksMeta {},
-                            );
+                            match filter {
+                                GeyserFilter::Blocks(filter) => {
+                                    blocks_subs.insert(
+                                        "client".to_string(),
+                                        filter,
+                                    );
+                                }
+                                GeyserFilter::BlocksMeta(filter) => {
+                                    blocksmeta_subs.insert(
+                                        "client".to_string(),
+                                        filter,
+                                    );
+                                }
+                            }
 
-                            timeout(subscribe_timeout.unwrap_or(Duration::MAX),
+                            let subscribe_result = timeout(subscribe_timeout.unwrap_or(Duration::MAX),
                                 client
                                     .subscribe_once(
                                         HashMap::new(),
                                         Default::default(),
                                         HashMap::new(),
                                         Default::default(),
-                                    // FIXME extract as paramter
                                         blocks_subs,
                                         blocksmeta_subs,
                                         Some(commitment_level),
                                         Default::default(),
                                         None,
                                     ))
-                            .await.expect("timeout on subscribe_once")
+                            .await;
+
+                            subscribe_result.expect("timeout") // FIXME
                         }
                     });
 
-                    (ConnectionState::Connecting(attempt, connection_task), Message::Connecting)
+                    (ConnectionState::Connecting(attempt, connection_task), Message::Connecting(attempt))
                 }
 
                 ConnectionState::Connecting(attempt, connection_task) => {
                     let subscribe_result = connection_task.await;
 
                      match subscribe_result {
-                        Ok(Ok(subscribed_stream)) => (ConnectionState::Ready(attempt, subscribed_stream), Message::Connecting),
+                        Ok(Ok(subscribed_stream)) => (ConnectionState::Ready(attempt, subscribed_stream), Message::Connecting(attempt)),
                         Ok(Err(geyser_error)) => {
                              // TODO identify non-recoverable errors and cancel stream
                             warn!("Subscribe failed on {} - retrying: {:?}", label, geyser_error);
-                            (ConnectionState::WaitReconnect(attempt), Message::Connecting)
+                            (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         },
                         Err(geyser_grpc_task_error) => {
                             panic!("Task aborted - should not happen :{geyser_grpc_task_error}");
@@ -195,12 +220,12 @@ pub fn create_geyser_reconnecting_stream(
                         Some(Err(tonic_status)) => {
                             // TODO identify non-recoverable errors and cancel stream
                             debug!("! error on {} - retrying: {:?}", label, tonic_status);
-                            (ConnectionState::WaitReconnect(attempt), Message::Connecting)
+                            (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         }
                         None =>  {
                             //TODO should not arrive. Mean the stream close.
                             warn!("! geyser stream closed on {} - retrying", label);
-                            (ConnectionState::WaitReconnect(attempt), Message::Connecting)
+                            (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         }
                     }
 
@@ -210,7 +235,7 @@ pub fn create_geyser_reconnecting_stream(
                     let backoff_secs = 1.5_f32.powi(attempt as i32).min(15.0);
                     info!("Waiting {} seconds, then connect to {}", backoff_secs, label);
                     sleep(Duration::from_secs_f32(backoff_secs)).await;
-                    (ConnectionState::NotConnected(attempt), Message::Connecting)
+                    (ConnectionState::NotConnected(attempt), Message::Connecting(attempt))
                 }
 
             }; // -- match

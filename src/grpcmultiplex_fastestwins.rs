@@ -82,8 +82,10 @@ where
                         }
                     }
                 }
-                Message::Connecting => {
-                    warn!("Stream-{} performs reconnect", stream_idx);
+                Message::Connecting(attempt) => {
+                    if attempt > 1 {
+                        warn!("Stream-{} performs reconnect attempt {}", stream_idx, attempt);
+                    }
                 }
             }
         }

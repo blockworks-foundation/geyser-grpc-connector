@@ -6,7 +6,7 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use std::pin::pin;
 
 use geyser_grpc_connector::experimental::mock_literpc_core::{map_produced_block, ProducedBlock};
-use geyser_grpc_connector::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GrpcConnectionTimeouts, GrpcSourceConfig};
+use geyser_grpc_connector::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{create_multiplex, FromYellowstoneMapper};
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
@@ -56,7 +56,7 @@ impl FromYellowstoneMapper for BlockMetaExtractor {
     type Target = BlockMetaMini;
     fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)> {
         match update.update_oneof {
-            Some(UpdateOneof::Block(update_blockmeta_message)) => {
+            Some(UpdateOneof::BlockMeta(update_blockmeta_message)) => {
                 let slot = update_blockmeta_message.slot;
                 let mini = BlockMetaMini {
                     slot,
@@ -74,6 +74,9 @@ pub async fn main() {
     // RUST_LOG=info,stream_blocks_mainnet=debug,geyser_grpc_connector=trace
     tracing_subscriber::fmt::init();
     // console_subscriber::init();
+
+    let subscribe_blocks = true;
+    let subscribe_blockmeta = false;
 
     let grpc_addr_green = env::var("GRPC_ADDR").expect("need grpc url for green");
     let grpc_x_token_green = env::var("GRPC_X_TOKEN").ok();
@@ -98,34 +101,34 @@ pub async fn main() {
     let toxiproxy_config =
         GrpcSourceConfig::new_with_timeout("toxiproxy".to_string(), grpc_addr_toxiproxy, None, timeouts.clone());
 
-    {
+    if subscribe_blocks {
         info!("Write Block stream..");
         let green_stream =
-            create_geyser_reconnecting_stream(green_config.clone(), CommitmentConfig::finalized());
+            create_geyser_reconnecting_stream(green_config.clone(), GeyserFilter::blocks(), CommitmentConfig::confirmed());
         let blue_stream =
-            create_geyser_reconnecting_stream(blue_config.clone(), CommitmentConfig::finalized());
+            create_geyser_reconnecting_stream(blue_config.clone(), GeyserFilter::blocks(), CommitmentConfig::confirmed());
         let toxiproxy_stream =
-            create_geyser_reconnecting_stream(toxiproxy_config.clone(), CommitmentConfig::finalized());
+            create_geyser_reconnecting_stream(toxiproxy_config.clone(), GeyserFilter::blocks(), CommitmentConfig::confirmed());
         let multiplex_stream = create_multiplex(
             vec![green_stream, blue_stream, toxiproxy_stream],
-            CommitmentConfig::finalized(),
-            BlockExtractor(CommitmentConfig::finalized()),
+            CommitmentConfig::confirmed(),
+            BlockExtractor(CommitmentConfig::confirmed()),
         );
         start_example_block_consumer(multiplex_stream);
     }
 
-    {
+    if subscribe_blockmeta {
         info!("Write BlockMeta stream..");
         let green_stream =
-            create_geyser_reconnecting_stream(green_config.clone(), CommitmentConfig::finalized());
+            create_geyser_reconnecting_stream(green_config.clone(), GeyserFilter::blocks_meta(), CommitmentConfig::confirmed());
         let blue_stream =
-            create_geyser_reconnecting_stream(blue_config.clone(), CommitmentConfig::finalized());
+            create_geyser_reconnecting_stream(blue_config.clone(), GeyserFilter::blocks_meta(), CommitmentConfig::confirmed());
         let toxiproxy_stream =
-            create_geyser_reconnecting_stream(toxiproxy_config.clone(), CommitmentConfig::finalized());
+            create_geyser_reconnecting_stream(toxiproxy_config.clone(), GeyserFilter::blocks_meta(), CommitmentConfig::confirmed());
         let multiplex_stream = create_multiplex(
             vec![green_stream, blue_stream, toxiproxy_stream],
-            CommitmentConfig::finalized(),
-            BlockMetaExtractor(CommitmentConfig::finalized()),
+            CommitmentConfig::confirmed(),
+            BlockMetaExtractor(CommitmentConfig::confirmed()),
         );
         start_example_blockmeta_consumer(multiplex_stream);
     }
