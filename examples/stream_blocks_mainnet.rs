@@ -1,3 +1,4 @@
+use std::env;
 use futures::{Stream, StreamExt};
 use log::info;
 use solana_sdk::clock::Slot;
@@ -43,20 +44,23 @@ pub async fn main() {
     tracing_subscriber::fmt::init();
     // console_subscriber::init();
 
-    // mango validator (mainnet)
-    let grpc_addr_mainnet_triton = "http://202.8.9.108:10000".to_string();
+    let grpc_addr_green = env::var("GRPC_ADDR").expect("need grpc url for green");
+    let grpc_x_token_green = env::var("GRPC_X_TOKEN").ok();
+    let grpc_addr_blue = env::var("GRPC_ADDR2").expect("need grpc url for blue");
+    let grpc_x_token_blue = env::var("GRPC_X_TOKEN2").ok();
     // via toxiproxy
-    let grpc_addr_mainnet_triton_toxi = "http://127.0.0.1:10001".to_string();
-    // ams81 (mainnet)
-    let grpc_addr_mainnet_ams81 = "http://202.8.8.12:10000".to_string();
-    // testnet - NOTE: this connection has terrible lags (almost 5 minutes)
-    // let grpc_addr = "http://147.28.169.13:10000".to_string();
+    let grpc_addr_toxiproxy = "http://127.0.0.1:10001".to_string();
 
-    let green_config = GrpcSourceConfig::new("triton".to_string(), grpc_addr_mainnet_triton, None);
+    info!("Using green on {} ({})", grpc_addr_green, grpc_x_token_green.is_some());
+    info!("Using blue on {} ({})", grpc_addr_blue, grpc_x_token_blue.is_some());
+    info!("Using toxiproxy on {}", grpc_addr_toxiproxy);
+
+    let green_config = GrpcSourceConfig::new("greensource".to_string(), grpc_addr_green, grpc_x_token_green);
     let blue_config =
-        GrpcSourceConfig::new("mangoams81".to_string(), grpc_addr_mainnet_ams81, None);
+        GrpcSourceConfig::new("bluesource".to_string(), grpc_addr_blue, grpc_x_token_blue);
     let toxiproxy_config =
-        GrpcSourceConfig::new("toxiproxy".to_string(), grpc_addr_mainnet_triton_toxi, None);
+        GrpcSourceConfig::new("toxiproxy".to_string(), grpc_addr_toxiproxy, None);
+
 
     let green_stream =
         create_geyser_reconnecting_stream(green_config.clone(), CommitmentConfig::finalized());
@@ -64,6 +68,7 @@ pub async fn main() {
         create_geyser_reconnecting_stream(blue_config.clone(), CommitmentConfig::finalized());
     let toxiproxy_stream =
         create_geyser_reconnecting_stream(toxiproxy_config.clone(), CommitmentConfig::finalized());
+
     let multiplex_stream = create_multiplex(
         vec![green_stream, blue_stream, toxiproxy_stream],
         CommitmentConfig::finalized(),

@@ -7,11 +7,17 @@ use merge_streams::MergeStreams;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
+use yellowstone_grpc_proto::tonic::codegen::tokio_stream::StreamExt;
 
 pub trait FromYellowstoneMapper {
     // Target is something like ProducedBlock
     type Target;
     fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)>;
+}
+
+struct TaggedMessage {
+    pub stream_idx: usize,
+    pub payload: Message,
 }
 
 /// use streams created by ``create_geyser_reconnecting_stream``
@@ -44,8 +50,14 @@ where
     // let mut futures = futures::stream::SelectAll::new();
 
     let mut streams = vec![];
+    let mut idx = 0;
     for grpc_source in grpc_source_streams {
-        streams.push(Box::pin(grpc_source));
+        let tagged = grpc_source.map(move |msg| TaggedMessage {
+            stream_idx: idx,
+            payload: msg,
+        });
+        streams.push(Box::pin(tagged));
+        idx += 1;
     }
 
     let merged_streams = streams.merge();
@@ -53,15 +65,14 @@ where
     map_updates(merged_streams, mapper)
 }
 
-fn map_updates<S, E>(merged_streams: S, mapper: E) -> impl Stream<Item = E::Target>
+fn map_updates<E>(merged_streams: impl Stream<Item = TaggedMessage>, mapper: E) -> impl Stream<Item = E::Target>
 where
-    S: Stream<Item = Message>,
     E: FromYellowstoneMapper,
 {
     let mut tip: Slot = 0;
     stream! {
-        for await update in merged_streams {
-            match update {
+        for await TaggedMessage {stream_idx, payload} in merged_streams {
+            match payload {
                 GeyserSubscribeUpdate(update) => {
                     // take only the update messages we want
                     if let Some((proposed_slot, block)) = mapper.map_yellowstone_update(update) {
@@ -72,7 +83,7 @@ where
                     }
                 }
                 Message::Reconnecting => {
-                    warn!("Stream performs reconnect"); // TODO waht does that mean?
+                    warn!("Stream-{} performs reconnect", stream_idx);
                 }
             }
         }
