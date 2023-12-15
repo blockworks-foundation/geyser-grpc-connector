@@ -1249,6 +1249,7 @@ dependencies = [
  "futures",
  "itertools",
  "log",
+ "merge-streams",
  "prometheus",
  "solana-sdk",
  "tokio",
@@ -1715,6 +1716,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a634b1c61a95585bd15607c6ab0c4e5b226e695ff2800ba0cdccddf208c406c"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "merge-streams"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f84f6452969abd246e7ac1fe4fe75906c76e8ec88d898df9aef37e0f3b6a7c2"
+dependencies = [
+ "futures-core",
+ "pin-project",
 ]
 
 [[package]]

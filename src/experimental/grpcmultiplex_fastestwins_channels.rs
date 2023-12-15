@@ -69,7 +69,7 @@ pub async fn create_multiplex(
 
         let mut current_slot: Slot = 0;
 
-        'main_loop: loop {
+        loop {
             let block_cmd = select! {
                 message = &mut merged_futures => {
                     match message {

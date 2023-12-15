@@ -97,23 +97,25 @@ pub async fn main() {
             match msg_or_timeout {
                 Ok(Some(offer_block_msg)) => {
                     // collect the offered slots from the channels
-                    if let OfferBlockMsg::NextSlot(label, block_offered) = offer_block_msg {
-                        info!("<< offered slot from {}: {:?}", label, block_offered);
+                    match offer_block_msg {
+                        OfferBlockMsg::NextSlot(label, block_offered) => {
+                            info!("<< offered slot from {}: {:?}", label, block_offered);
 
-                        // TOOD use .parent instead
-                        if block_offered.parent_slot == current_tip {
-                            current_tip = block_offered.slot;
-                            info!("<< take block from {} as new tip {}", label, current_tip);
-                            assert_ne!(current_tip, 0, "must not see uninitialized tip");
+                            // TOOD use .parent instead
+                            if block_offered.parent_slot == current_tip {
+                                current_tip = block_offered.slot;
+                                info!("<< take block from {} as new tip {}", label, current_tip);
+                                assert_ne!(current_tip, 0, "must not see uninitialized tip");
 
-                            emit_block_on_multiplex_output_channel(&sx_multi, current_tip);
-                            tx_tip.send(current_tip).unwrap();
-                            blocks_offered.clear();
-                            continue 'main_loop;
-                        } else {
-                            // keep the block for later
-                            blocks_offered.push(block_offered);
-                            continue 'main_loop;
+                                emit_block_on_multiplex_output_channel(&sx_multi, current_tip);
+                                tx_tip.send(current_tip).unwrap();
+                                blocks_offered.clear();
+                                continue 'main_loop;
+                            } else {
+                                // keep the block for later
+                                blocks_offered.push(block_offered);
+                                continue 'main_loop;
+                            }
                         }
                     }
                     // TODO handle else
