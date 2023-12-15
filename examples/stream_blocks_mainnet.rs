@@ -6,9 +6,7 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use std::pin::pin;
 
 use geyser_grpc_connector::experimental::mock_literpc_core::{map_produced_block, ProducedBlock};
-use geyser_grpc_connector::grpc_subscription_autoreconnect::{
-    create_geyser_reconnecting_stream, GrpcSourceConfig,
-};
+use geyser_grpc_connector::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GrpcConnectionTimeouts, GrpcSourceConfig};
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{create_multiplex, FromYellowstoneMapper};
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
@@ -88,11 +86,17 @@ pub async fn main() {
     info!("Using blue on {} ({})", grpc_addr_blue, grpc_x_token_blue.is_some());
     info!("Using toxiproxy on {}", grpc_addr_toxiproxy);
 
-    let green_config = GrpcSourceConfig::new("greensource".to_string(), grpc_addr_green, grpc_x_token_green);
+    let timeouts = GrpcConnectionTimeouts {
+        connect_timeout: Duration::from_secs(5),
+        request_timeout: Duration::from_secs(5),
+        subscribe_timeout: Duration::from_secs(5),
+    };
+
+    let green_config = GrpcSourceConfig::new_with_timeout("greensource".to_string(), grpc_addr_green, grpc_x_token_green, timeouts.clone());
     let blue_config =
-        GrpcSourceConfig::new("bluesource".to_string(), grpc_addr_blue, grpc_x_token_blue);
+        GrpcSourceConfig::new_with_timeout("bluesource".to_string(), grpc_addr_blue, grpc_x_token_blue, timeouts.clone());
     let toxiproxy_config =
-        GrpcSourceConfig::new("toxiproxy".to_string(), grpc_addr_toxiproxy, None);
+        GrpcSourceConfig::new_with_timeout("toxiproxy".to_string(), grpc_addr_toxiproxy, None, timeouts.clone());
 
     {
         info!("Write Block stream..");

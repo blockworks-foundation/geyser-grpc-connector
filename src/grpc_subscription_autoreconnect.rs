@@ -73,10 +73,10 @@ pub enum Message {
 }
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
-    NotConnected,
-    Connecting(JoinHandle<GeyserGrpcClientResult<S>>),
-    Ready(S),
-    WaitReconnect,
+    NotConnected(u32),
+    Connecting(u32, JoinHandle<GeyserGrpcClientResult<S>>),
+    Ready(u32, S),
+    WaitReconnect(u32),
 }
 
 // Takes geyser filter for geyser, connect to Geyser and return a generic stream of SubscribeUpdate
@@ -98,7 +98,7 @@ pub fn create_geyser_reconnecting_stream(
         _ => panic!("Only CONFIRMED and FINALIZED is supported/suggested"),
     };
 
-    let mut state = ConnectionState::NotConnected;
+    let mut state = ConnectionState::NotConnected(0);
 
     // in case of cancellation, we restart from here:
     // thus we want to keep the progression in a state object outside the stream! makro
@@ -108,7 +108,8 @@ pub fn create_geyser_reconnecting_stream(
 
             (state, yield_value) = match state {
 
-                ConnectionState::NotConnected => {
+                ConnectionState::NotConnected(mut attempt) => {
+                    attempt = attempt + 1;
 
                     let connection_task = tokio::spawn({
                         let addr = grpc_source.grpc_addr.clone();
@@ -117,7 +118,7 @@ pub fn create_geyser_reconnecting_stream(
                         let connect_timeout = grpc_source.timeouts.as_ref().map(|t| t.connect_timeout);
                         let request_timeout = grpc_source.timeouts.as_ref().map(|t| t.request_timeout);
                         let subscribe_timeout = grpc_source.timeouts.as_ref().map(|t| t.subscribe_timeout);
-                        // log!(if attempt > 1 { Level::Warn } else { Level::Debug }, "Connecting attempt #{} to {}", attempt, addr);
+                        log!(if attempt > 1 { Level::Warn } else { Level::Debug }, "Connecting attempt #{} to {}", attempt, addr);
                         async move {
 
                             let connect_result = GeyserGrpcClient::connect_with_timeout(
@@ -164,18 +165,18 @@ pub fn create_geyser_reconnecting_stream(
                         }
                     });
 
-                    (ConnectionState::Connecting(connection_task), Message::Connecting)
+                    (ConnectionState::Connecting(attempt, connection_task), Message::Connecting)
                 }
 
-                ConnectionState::Connecting(connection_task) => {
+                ConnectionState::Connecting(attempt, connection_task) => {
                     let subscribe_result = connection_task.await;
 
                      match subscribe_result {
-                        Ok(Ok(subscribed_stream)) => (ConnectionState::Ready(subscribed_stream), Message::Connecting),
+                        Ok(Ok(subscribed_stream)) => (ConnectionState::Ready(attempt, subscribed_stream), Message::Connecting),
                         Ok(Err(geyser_error)) => {
                              // TODO identify non-recoverable errors and cancel stream
                             warn!("Subscribe failed on {} - retrying: {:?}", label, geyser_error);
-                            (ConnectionState::WaitReconnect, Message::Connecting)
+                            (ConnectionState::WaitReconnect(attempt), Message::Connecting)
                         },
                         Err(geyser_grpc_task_error) => {
                             panic!("Task aborted - should not happen :{geyser_grpc_task_error}");
@@ -184,31 +185,32 @@ pub fn create_geyser_reconnecting_stream(
 
                 }
 
-                ConnectionState::Ready(mut geyser_stream) => {
+                ConnectionState::Ready(attempt, mut geyser_stream) => {
 
                     match geyser_stream.next().await {
                         Some(Ok(update_message)) => {
                             trace!("> recv update message from {}", label);
-                            (ConnectionState::Ready(geyser_stream), Message::GeyserSubscribeUpdate(update_message))
+                            (ConnectionState::Ready(attempt, geyser_stream), Message::GeyserSubscribeUpdate(update_message))
                         }
                         Some(Err(tonic_status)) => {
                             // TODO identify non-recoverable errors and cancel stream
                             debug!("! error on {} - retrying: {:?}", label, tonic_status);
-                            (ConnectionState::WaitReconnect, Message::Connecting)
+                            (ConnectionState::WaitReconnect(attempt), Message::Connecting)
                         }
                         None =>  {
                             //TODO should not arrive. Mean the stream close.
                             warn!("! geyser stream closed on {} - retrying", label);
-                            (ConnectionState::WaitReconnect, Message::Connecting)
+                            (ConnectionState::WaitReconnect(attempt), Message::Connecting)
                         }
                     }
 
                 }
 
-                ConnectionState::WaitReconnect => {
-                    info!("Waiting a bit, then connect to {}", label);
-                    sleep(Duration::from_secs(1)).await;
-                    (ConnectionState::NotConnected, Message::Connecting)
+                ConnectionState::WaitReconnect(attempt) => {
+                    let backoff_secs = 1.5_f32.powi(attempt as i32).min(15.0);
+                    info!("Waiting {} seconds, then connect to {}", backoff_secs, label);
+                    sleep(Duration::from_secs_f32(backoff_secs)).await;
+                    (ConnectionState::NotConnected(attempt), Message::Connecting)
                 }
 
             }; // -- match
