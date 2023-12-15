@@ -87,7 +87,7 @@ pub enum GeyserFilter {
 }
 
 impl GeyserFilter {
-    pub fn blocks() -> Self {
+    pub fn blocks_and_txs() -> Self {
         Self::Blocks(SubscribeRequestFilterBlocks {
             account_include: Default::default(),
             include_transactions: Some(true),
@@ -186,7 +186,8 @@ pub fn create_geyser_reconnecting_stream(
                                     ))
                             .await;
 
-                            subscribe_result.expect("timeout") // FIXME
+                            // maybe not optimal
+                            subscribe_result.map_err(|_| Status::unknown("subscribe timeout"))?
                         }
                     });
 
