@@ -82,7 +82,7 @@ where
                         }
                     }
                 }
-                Message::Reconnecting => {
+                Message::Connecting => {
                     warn!("Stream-{} performs reconnect", stream_idx);
                 }
             }

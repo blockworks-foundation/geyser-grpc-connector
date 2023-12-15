@@ -14,24 +14,57 @@ use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 
-fn start_example_consumer(multiplex_stream: impl Stream<Item = ProducedBlock> + Send + 'static) {
+fn start_example_block_consumer(multiplex_stream: impl Stream<Item = ProducedBlock> + Send + 'static) {
     tokio::spawn(async move {
         let mut block_stream = pin!(multiplex_stream);
         while let Some(block) = block_stream.next().await {
-            info!("emitted block #{} from multiplexer", block.slot);
+            info!("emitted block #{}@{} from multiplexer", block.slot, block.commitment_config.commitment);
         }
     });
 }
 
-struct ExtractBlock(CommitmentConfig);
+fn start_example_blockmeta_consumer(multiplex_stream: impl Stream<Item = BlockMetaMini> + Send + 'static) {
+    tokio::spawn(async move {
+        let mut blockmeta_stream = pin!(multiplex_stream);
+        while let Some(mini) = blockmeta_stream.next().await {
+            info!("emitted blockmeta #{}@{} from multiplexer", mini.slot, mini.commitment_config.commitment);
+        }
+    });
+}
 
-impl FromYellowstoneMapper for ExtractBlock {
+struct BlockExtractor(CommitmentConfig);
+
+impl FromYellowstoneMapper for BlockExtractor {
     type Target = ProducedBlock;
     fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)> {
         match update.update_oneof {
             Some(UpdateOneof::Block(update_block_message)) => {
                 let block = map_produced_block(update_block_message, self.0);
                 Some((block.slot, block))
+            }
+            _ => None,
+        }
+    }
+}
+
+pub struct BlockMetaMini {
+    pub slot: Slot,
+    pub commitment_config: CommitmentConfig,
+}
+
+struct BlockMetaExtractor(CommitmentConfig);
+
+impl FromYellowstoneMapper for BlockMetaExtractor {
+    type Target = BlockMetaMini;
+    fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)> {
+        match update.update_oneof {
+            Some(UpdateOneof::Block(update_blockmeta_message)) => {
+                let slot = update_blockmeta_message.slot;
+                let mini = BlockMetaMini {
+                    slot,
+                    commitment_config: self.0,
+                };
+                Some((slot, mini))
             }
             _ => None,
         }
@@ -61,22 +94,38 @@ pub async fn main() {
     let toxiproxy_config =
         GrpcSourceConfig::new("toxiproxy".to_string(), grpc_addr_toxiproxy, None);
 
+    {
+        info!("Write Block stream..");
+        let green_stream =
+            create_geyser_reconnecting_stream(green_config.clone(), CommitmentConfig::finalized());
+        let blue_stream =
+            create_geyser_reconnecting_stream(blue_config.clone(), CommitmentConfig::finalized());
+        let toxiproxy_stream =
+            create_geyser_reconnecting_stream(toxiproxy_config.clone(), CommitmentConfig::finalized());
+        let multiplex_stream = create_multiplex(
+            vec![green_stream, blue_stream, toxiproxy_stream],
+            CommitmentConfig::finalized(),
+            BlockExtractor(CommitmentConfig::finalized()),
+        );
+        start_example_block_consumer(multiplex_stream);
+    }
 
-    let green_stream =
-        create_geyser_reconnecting_stream(green_config.clone(), CommitmentConfig::finalized());
-    let blue_stream =
-        create_geyser_reconnecting_stream(blue_config.clone(), CommitmentConfig::finalized());
-    let toxiproxy_stream =
-        create_geyser_reconnecting_stream(toxiproxy_config.clone(), CommitmentConfig::finalized());
+    {
+        info!("Write BlockMeta stream..");
+        let green_stream =
+            create_geyser_reconnecting_stream(green_config.clone(), CommitmentConfig::finalized());
+        let blue_stream =
+            create_geyser_reconnecting_stream(blue_config.clone(), CommitmentConfig::finalized());
+        let toxiproxy_stream =
+            create_geyser_reconnecting_stream(toxiproxy_config.clone(), CommitmentConfig::finalized());
+        let multiplex_stream = create_multiplex(
+            vec![green_stream, blue_stream, toxiproxy_stream],
+            CommitmentConfig::finalized(),
+            BlockMetaExtractor(CommitmentConfig::finalized()),
+        );
+        start_example_blockmeta_consumer(multiplex_stream);
+    }
 
-    let multiplex_stream = create_multiplex(
-        vec![green_stream, blue_stream, toxiproxy_stream],
-        CommitmentConfig::finalized(),
-        ExtractBlock(CommitmentConfig::finalized()),
-    );
-
-    start_example_consumer(multiplex_stream);
-
-    // "infinite" sleep
+        // "infinite" sleep
     sleep(Duration::from_secs(1800)).await;
 }
