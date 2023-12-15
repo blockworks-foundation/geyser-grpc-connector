@@ -3,9 +3,10 @@
 
 use std::collections::{HashMap};
 use std::ops::{Add};
+use std::pin::pin;
 use anyhow::{Context};
 use async_stream::stream;
-use futures::{Stream, StreamExt};
+use futures::{pin_mut, Stream, StreamExt};
 use itertools::{Itertools};
 use log::{debug, info, warn};
 use solana_sdk::clock::Slot;
@@ -51,12 +52,15 @@ pub async fn create_multiplex(
             futures.push(Box::pin(stream));
         }
 
+        pin_mut!(futures);
+        let mut futures = pin!(futures.next());
+
         let mut current_slot: Slot = 0;
 
         'main_loop: loop {
 
             let block_cmd = select! {
-                message = futures.next() => {
+                message = &mut futures => {
                     match message {
                         Some(message) => {
                             map_filter_block_message(current_slot, message, commitment_config)
