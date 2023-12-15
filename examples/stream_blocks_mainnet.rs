@@ -17,7 +17,7 @@ fn start_example_consumer(multiplex_stream: impl Stream<Item = ProducedBlock> + 
     tokio::spawn(async move {
         let mut block_stream = pin!(multiplex_stream);
         while let Some(block) = block_stream.next().await {
-            info!("received block #{} from multiplexer", block.slot,);
+            info!("emitted block #{} from multiplexer", block.slot);
         }
     });
 }

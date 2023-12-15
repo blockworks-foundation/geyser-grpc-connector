@@ -1,6 +1,7 @@
 use async_stream::stream;
 use futures::Stream;
 use log::{debug, info};
+use merge_streams::MergeStreams;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
@@ -38,23 +39,26 @@ where
     );
 
     // use merge
-    let mut futures = futures::stream::SelectAll::new();
+    // let mut futures = futures::stream::SelectAll::new();
 
+    let mut streams = vec![];
     for grpc_source in grpc_source_streams {
-        futures.push(Box::pin(grpc_source));
+        streams.push(Box::pin(grpc_source));
     }
 
-    map_updates(futures, mapper)
+    let merged_streams = streams.merge();
+
+    map_updates(merged_streams, mapper)
 }
 
-fn map_updates<S, E>(geyser_stream: S, mapper: E) -> impl Stream<Item = E::Target>
+fn map_updates<S, E>(merged_streams: S, mapper: E) -> impl Stream<Item = E::Target>
 where
     S: Stream<Item = Option<SubscribeUpdate>>,
     E: FromYellowstoneMapper,
 {
     let mut tip: Slot = 0;
     stream! {
-        for await update in geyser_stream {
+        for await update in merged_streams {
             match update {
                 Some(update) => {
                     // take only the update messages we want
