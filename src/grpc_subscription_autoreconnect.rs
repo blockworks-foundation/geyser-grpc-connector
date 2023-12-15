@@ -1,28 +1,23 @@
 use async_stream::stream;
 use futures::{Stream, StreamExt};
-use itertools::Itertools;
-use log::{debug, info, warn};
-use solana_sdk::clock::Slot;
+use log::{info, warn};
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
-use std::pin::{pin, Pin};
+use std::pin::Pin;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, Duration};
-use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientError, GeyserGrpcClientResult};
-use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::geyser::SubscribeUpdateBlockMeta;
-use yellowstone_grpc_proto::geyser::{
-    CommitmentLevel, SubscribeRequestFilterBlocks, SubscribeUpdate,
-};
+use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
+use yellowstone_grpc_proto::geyser::{SubscribeRequestFilterBlocks, SubscribeUpdate};
 use yellowstone_grpc_proto::prelude::SubscribeRequestFilterBlocksMeta;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 use yellowstone_grpc_proto::tonic::{async_trait, Status};
 
-
 #[async_trait]
 trait GrpcConnectionFactory: Clone {
     // async fn connect() -> GeyserGrpcClientResult<impl Stream<Item=Result<SubscribeUpdate, Status>>+Sized>;
-    async fn connect_and_subscribe(&self) -> GeyserGrpcClientResult<Pin<Box<dyn Stream<Item=Result<SubscribeUpdate, Status>>>>>;
+    async fn connect_and_subscribe(
+        &self,
+    ) -> GeyserGrpcClientResult<Pin<Box<dyn Stream<Item = Result<SubscribeUpdate, Status>>>>>;
 }
 
 #[derive(Clone, Debug)]
@@ -63,8 +58,12 @@ pub fn create_geyser_reconnecting_stream(
 
     // solana_sdk -> yellowstone
     let commitment_level = match commitment_config.commitment {
-        solana_sdk::commitment_config::CommitmentLevel::Confirmed => yellowstone_grpc_proto::prelude::CommitmentLevel::Confirmed,
-        solana_sdk::commitment_config::CommitmentLevel::Finalized => yellowstone_grpc_proto::prelude::CommitmentLevel::Finalized,
+        solana_sdk::commitment_config::CommitmentLevel::Confirmed => {
+            yellowstone_grpc_proto::prelude::CommitmentLevel::Confirmed
+        }
+        solana_sdk::commitment_config::CommitmentLevel::Finalized => {
+            yellowstone_grpc_proto::prelude::CommitmentLevel::Finalized
+        }
         _ => panic!("Only CONFIRMED and FINALIZED is supported/suggested"),
     };
 
@@ -110,7 +109,9 @@ pub fn create_geyser_reconnecting_stream(
                             );
 
                             // Connected;
-                            let subscribe_result = client
+
+
+                            client
                                 .subscribe_once(
                                     HashMap::new(),
                                     Default::default(),
@@ -121,9 +122,7 @@ pub fn create_geyser_reconnecting_stream(
                                     Some(commitment_level),
                                     Default::default(),
                                     None,
-                                ).await;
-
-                            subscribe_result
+                                ).await
                         }
                     });
 

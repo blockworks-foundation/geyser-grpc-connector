@@ -1,24 +1,24 @@
-/// Deprecated task/channel-based implementation of the multiplexer - use the stream-based one instead
-
-
-use std::collections::{HashMap};
-use std::ops::{Add};
-use anyhow::{Context};
+use anyhow::Context;
 use async_stream::stream;
 use futures::{pin_mut, Stream, StreamExt};
-use itertools::{Itertools};
+use itertools::Itertools;
 use log::{debug, info, warn};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
-use solana_sdk::commitment_config::CommitmentLevel;
-use tokio::{pin, select};
-use tokio::sync::broadcast::{Sender};
-use tokio::time::{Duration, Instant, sleep_until};
-use yellowstone_grpc_client::GeyserGrpcClient;
-use yellowstone_grpc_proto::geyser::{SubscribeRequestFilterBlocks, SubscribeUpdate, SubscribeUpdateBlock};
-use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
+/// Deprecated task/channel-based implementation of the multiplexer - use the stream-based one instead
+use std::collections::HashMap;
+use std::ops::Add;
+
 use merge_streams::MergeStreams;
+use tokio::select;
+use tokio::sync::broadcast::Sender;
+use tokio::time::{sleep_until, Duration, Instant};
+use yellowstone_grpc_client::GeyserGrpcClient;
+use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
+use yellowstone_grpc_proto::geyser::{
+    SubscribeRequestFilterBlocks, SubscribeUpdate, SubscribeUpdateBlock,
+};
+use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 
 // use solana_lite_rpc_cluster_endpoints::grpc_subscription::{create_block_processing_task, map_produced_block};
 // use solana_lite_rpc_core::AnyhowJoinHandle;
@@ -33,7 +33,8 @@ pub async fn create_multiplex(
     assert!(
         commitment_config == CommitmentConfig::confirmed()
             || commitment_config == CommitmentConfig::finalized(),
-        "Only CONFIRMED and FINALIZED is supported");
+        "Only CONFIRMED and FINALIZED is supported"
+    );
     // note: PROCESSED blocks are not sequential in presense of forks; this will break the logic
 
     if grpc_sources.is_empty() {
@@ -41,19 +42,24 @@ pub async fn create_multiplex(
     }
 
     tokio::spawn(async move {
-        info!("Starting multiplexer with {} sources: {}",
+        info!(
+            "Starting multiplexer with {} sources: {}",
             grpc_sources.len(),
-            grpc_sources.iter().map(|source| source.label.clone()).join(", "));
-
+            grpc_sources
+                .iter()
+                .map(|source| source.label.clone())
+                .join(", ")
+        );
 
         let mut streams = vec![];
         for grpc_source in grpc_sources {
             // note: stream never terminates
-            let stream = create_geyser_reconnecting_stream(grpc_source.clone(), commitment_config).await
-            .map(|update| {
-                // TODO wrap in new struct and add the source label
-                update
-            });
+            let stream = create_geyser_reconnecting_stream(grpc_source.clone(), commitment_config)
+                .await
+                .map(|update| {
+                    // TODO wrap in new struct and add the source label
+                    update
+                });
             streams.push(stream);
         }
 
@@ -64,7 +70,6 @@ pub async fn create_multiplex(
         let mut current_slot: Slot = 0;
 
         'main_loop: loop {
-
             let block_cmd = select! {
                 message = &mut merged_futures => {
                     match message {
@@ -90,7 +95,6 @@ pub async fn create_multiplex(
                     debug!(". skipping this message by type");
                 }
             }
-
         }
     })
 }
@@ -104,7 +108,11 @@ enum BlockCmd {
     SkipMessage,
 }
 
-fn map_filter_block_message(current_slot: Slot, update_message: SubscribeUpdate, _commitment_config: CommitmentConfig) -> BlockCmd {
+fn map_filter_block_message(
+    current_slot: Slot,
+    update_message: SubscribeUpdate,
+    _commitment_config: CommitmentConfig,
+) -> BlockCmd {
     if let Some(UpdateOneof::Block(update_block_message)) = update_message.update_oneof {
         if update_block_message.slot <= current_slot && current_slot != 0 {
             // no progress - skip this
@@ -118,7 +126,6 @@ fn map_filter_block_message(current_slot: Slot, update_message: SubscribeUpdate,
     } else {
         BlockCmd::SkipMessage
     }
-
 }
 
 #[derive(Clone, Debug)]
@@ -145,12 +152,16 @@ impl GrpcSourceConfig {
 // note: stream never terminates
 async fn create_geyser_reconnecting_stream(
     grpc_source: GrpcSourceConfig,
-    commitment_config: CommitmentConfig) -> impl Stream<Item = SubscribeUpdate> {
-
+    commitment_config: CommitmentConfig,
+) -> impl Stream<Item = SubscribeUpdate> {
     // solana_sdk -> yellowstone
     let commitment_level = match commitment_config.commitment {
-        solana_sdk::commitment_config::CommitmentLevel::Confirmed => yellowstone_grpc_proto::prelude::CommitmentLevel::Confirmed,
-        solana_sdk::commitment_config::CommitmentLevel::Finalized => yellowstone_grpc_proto::prelude::CommitmentLevel::Finalized,
+        solana_sdk::commitment_config::CommitmentLevel::Confirmed => {
+            yellowstone_grpc_proto::prelude::CommitmentLevel::Confirmed
+        }
+        solana_sdk::commitment_config::CommitmentLevel::Finalized => {
+            yellowstone_grpc_proto::prelude::CommitmentLevel::Finalized
+        }
         _ => panic!("Only CONFIRMED and FINALIZED is supported/suggested"),
     };
 
@@ -224,5 +235,4 @@ async fn create_geyser_reconnecting_stream(
             warn!("stream consumer loop {} terminated", label);
         } // -- main loop
     } // -- stream!
-
 }

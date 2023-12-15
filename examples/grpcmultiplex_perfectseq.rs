@@ -1,23 +1,20 @@
-use std::collections::{HashMap, HashSet};
-use std::fmt::{Display, Formatter};
-use std::ops::Deref;
-use std::path::PathBuf;
-use std::sync::Arc;
 use anyhow::{bail, Context};
 use futures::StreamExt;
-use itertools::{ExactlyOneError, Itertools};
+use itertools::Itertools;
+use std::collections::HashMap;
 
 use log::{debug, error, info, warn};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::select;
+use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::{Receiver, Sender};
-use tokio::sync::broadcast::error::{RecvError, TryRecvError};
-use tokio::sync::RwLock;
-use tokio::time::{sleep, Duration, timeout};
+use tokio::time::{sleep, timeout, Duration};
 use yellowstone_grpc_client::GeyserGrpcClient;
-use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequestFilterBlocksMeta, SubscribeUpdateBlockMeta};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
+use yellowstone_grpc_proto::geyser::{
+    CommitmentLevel, SubscribeRequestFilterBlocksMeta, SubscribeUpdateBlockMeta,
+};
 
 pub const GRPC_VERSION: &str = "1.16.1";
 
@@ -36,34 +33,46 @@ pub async fn main() {
 
     // let (block_sx_green, blocks_notifier_green) = tokio::sync::broadcast::channel(1000);
     let (block_sx_green, blocks_notifier_green) = start_monkey_broadcast::<SimpleBlockMeta>(1000);
-    let (block_sx_blue, blocks_notifier_blue) =  tokio::sync::broadcast::channel(1000);
+    let (block_sx_blue, blocks_notifier_blue) = tokio::sync::broadcast::channel(1000);
 
     // TODO ship ProducedBlock
-    let (sx_multi, mut rx_multi) = tokio::sync::broadcast::channel::<Slot>(1000);
+    let (sx_multi, rx_multi) = tokio::sync::broadcast::channel::<Slot>(1000);
 
     let grpc_x_token = None;
-    let block_confirmed_task_green = create_blockmeta_processing_task(
+    let _block_confirmed_task_green = create_blockmeta_processing_task(
         _grpc_addr_mainnet_triton.clone(),
         grpc_x_token.clone(),
         block_sx_green.clone(),
         CommitmentLevel::Confirmed,
     );
 
-    let block_confirmed_task_blue = create_blockmeta_processing_task(
+    let _block_confirmed_task_blue = create_blockmeta_processing_task(
         grpc_addr_mainnet_ams81.clone(),
         grpc_x_token.clone(),
         block_sx_blue.clone(),
         CommitmentLevel::Confirmed,
     );
 
-
     let (tx_tip, _) = tokio::sync::watch::channel::<Slot>(0);
 
-    let (offer_block_sender, mut offer_block_notifier) = tokio::sync::mpsc::channel::<OfferBlockMsg>(100);
+    let (offer_block_sender, mut offer_block_notifier) =
+        tokio::sync::mpsc::channel::<OfferBlockMsg>(100);
 
     // producers
-    start_progressor("green".to_string(), blocks_notifier_green, tx_tip.subscribe(), offer_block_sender.clone()).await;
-    start_progressor("blue".to_string(), blocks_notifier_blue, tx_tip.subscribe(), offer_block_sender.clone()).await;
+    start_progressor(
+        "green".to_string(),
+        blocks_notifier_green,
+        tx_tip.subscribe(),
+        offer_block_sender.clone(),
+    )
+    .await;
+    start_progressor(
+        "blue".to_string(),
+        blocks_notifier_blue,
+        tx_tip.subscribe(),
+        offer_block_sender.clone(),
+    )
+    .await;
 
     // merge task
     // collect the offered slots from the two channels
@@ -75,11 +84,14 @@ pub async fn main() {
         let mut current_tip = 0;
         let mut blocks_offered = Vec::<BlockRef>::new();
         'main_loop: loop {
-
             // note: we abuse the timeout mechanism to collect some blocks
             let timeout_secs = if current_tip == 0 { 20 } else { 10 };
 
-            let msg_or_timeout = timeout(Duration::from_secs(timeout_secs), offer_block_notifier.recv()).await;
+            let msg_or_timeout = timeout(
+                Duration::from_secs(timeout_secs),
+                offer_block_notifier.recv(),
+            )
+            .await;
             info!("- current_tip={}", current_tip);
 
             match msg_or_timeout {
@@ -103,8 +115,6 @@ pub async fn main() {
                             blocks_offered.push(block_offered);
                             continue 'main_loop;
                         }
-
-
                     }
                     // TODO handle else
                 }
@@ -120,7 +130,10 @@ pub async fn main() {
 
                     // we abuse timeout feature to wait for some blocks to arrive to select the "best" one
                     if current_tip == 0 {
-                        let start_slot = blocks_offered.iter().max_by(|lhs,rhs| lhs.slot.cmp(&rhs.slot)).expect("need at least one slot to start");
+                        let start_slot = blocks_offered
+                            .iter()
+                            .max_by(|lhs, rhs| lhs.slot.cmp(&rhs.slot))
+                            .expect("need at least one slot to start");
                         current_tip = start_slot.slot;
                         assert_ne!(current_tip, 0, "must not see uninitialized tip");
 
@@ -131,7 +144,11 @@ pub async fn main() {
                         continue 'main_loop;
                     }
 
-                    match blocks_offered.iter().filter(|b| b.parent_slot == current_tip).exactly_one() {
+                    match blocks_offered
+                        .iter()
+                        .filter(|b| b.parent_slot == current_tip)
+                        .exactly_one()
+                    {
                         Ok(found_next) => {
                             current_tip = found_next.slot;
                             assert_ne!(current_tip, 0, "must not see uninitialized tip");
@@ -139,7 +156,7 @@ pub async fn main() {
                             info!("--> progressing tip to {}", current_tip);
                             blocks_offered.clear();
                         }
-                        Err(missed) => {
+                        Err(_missed) => {
                             warn!("--> no slots offered - SHOULD ABORT - no hope to progress");
                         }
                     }
@@ -151,7 +168,6 @@ pub async fn main() {
 
         info!("Shutting down merge task.");
     });
-
 
     tokio::spawn(async move {
         let mut rx_multi = rx_multi;
@@ -167,16 +183,14 @@ pub async fn main() {
         }
     });
 
-
     // "infinite" sleep
     sleep(Duration::from_secs(1800)).await;
 
     // TODO proper shutdown
     info!("Shutdown completed.");
-
 }
 
-fn emit_block_on_multiplex_output_channel(sx_multi: &Sender<Slot>, mut current_tip: u64) {
+fn emit_block_on_multiplex_output_channel(sx_multi: &Sender<Slot>, current_tip: u64) {
     sx_multi.send(current_tip).unwrap();
 }
 
@@ -200,8 +214,12 @@ enum OfferBlockMsg {
     NextSlot(String, BlockRef),
 }
 
-async fn start_progressor(label: String, blocks_notifier: Receiver<SimpleBlockMeta>, mut rx_tip: tokio::sync::watch::Receiver<Slot>,
-                    offer_block_sender: tokio::sync::mpsc::Sender<OfferBlockMsg>) {
+async fn start_progressor(
+    label: String,
+    blocks_notifier: Receiver<SimpleBlockMeta>,
+    mut rx_tip: tokio::sync::watch::Receiver<Slot>,
+    offer_block_sender: tokio::sync::mpsc::Sender<OfferBlockMsg>,
+) {
     tokio::spawn(async move {
         // TODO is .resubscribe what we want?
         let mut blocks_notifier = blocks_notifier.resubscribe();
@@ -224,11 +242,11 @@ async fn start_progressor(label: String, blocks_notifier: Receiver<SimpleBlockMe
                         debug!("Tip variable closed for {}", label);
                         break 'main_loop;
                     }
-                    local_tip = rx_tip.borrow_and_update().clone();
+                    local_tip = *rx_tip.borrow_and_update();
                     info!("++> {} tip changed to {}", label, local_tip);
                     // TODO update local tip
                 }
-                recv_result = blocks_notifier.recv(), if !(highest_block.slot > local_tip) => {
+                recv_result = blocks_notifier.recv(), if highest_block.slot <= local_tip => {
                     match recv_result {
                         Ok(block) => {
                             info!("=> recv on {}: {}",label, format_block(&block));
@@ -253,9 +271,11 @@ async fn start_progressor(label: String, blocks_notifier: Receiver<SimpleBlockMe
 }
 
 fn format_block(block: &SimpleBlockMeta) -> String {
-    format!("{:?}@{} (-> {})", block.slot, block.commitment_config.commitment, block.parent_slot)
+    format!(
+        "{:?}@{} (-> {})",
+        block.slot, block.commitment_config.commitment, block.parent_slot
+    )
 }
-
 
 fn start_monkey_broadcast<T: Clone + Send + 'static>(capacity: usize) -> (Sender<T>, Receiver<T>) {
     let (tx, monkey_upstream) = tokio::sync::broadcast::channel::<T>(1024);
@@ -265,11 +285,9 @@ fn start_monkey_broadcast<T: Clone + Send + 'static>(capacity: usize) -> (Sender
         let mut monkey_upstream = monkey_upstream;
         'recv_loop: for counter in 1.. {
             let value = match monkey_upstream.recv().await {
-                Ok(msg) => {
-                    msg
-                }
+                Ok(msg) => msg,
                 Err(RecvError::Closed) => {
-                    return ();
+                    return;
                 }
                 Err(RecvError::Lagged(_)) => {
                     continue;
@@ -278,7 +296,7 @@ fn start_monkey_broadcast<T: Clone + Send + 'static>(capacity: usize) -> (Sender
             if let Ok(val) = monkey_upstream.recv().await {
                 val
             } else {
-                return ();
+                return;
             };
             // info!("forwarding: {}", value);
             // failes if there are no receivers
@@ -301,7 +319,7 @@ fn start_monkey_broadcast<T: Clone + Send + 'static>(capacity: usize) -> (Sender
                 Ok(_) => {
                     debug!("% forwarded");
                 }
-                Err(_) => panic!("Should never happen")
+                Err(_) => panic!("Should never happen"),
             }
         }
     });
@@ -316,7 +334,6 @@ struct SimpleBlockMeta {
     commitment_config: CommitmentConfig,
 }
 
-
 fn create_blockmeta_processing_task(
     grpc_addr: String,
     grpc_x_token: Option<String>,
@@ -324,10 +341,7 @@ fn create_blockmeta_processing_task(
     commitment_level: CommitmentLevel,
 ) -> tokio::task::JoinHandle<anyhow::Result<()>> {
     let mut blocks_subs = HashMap::new();
-    blocks_subs.insert(
-        "client".to_string(),
-        SubscribeRequestFilterBlocksMeta {},
-    );
+    blocks_subs.insert("client".to_string(), SubscribeRequestFilterBlocksMeta {});
 
     let commitment_config = match commitment_level {
         CommitmentLevel::Confirmed => CommitmentConfig::confirmed(),
@@ -335,7 +349,7 @@ fn create_blockmeta_processing_task(
         CommitmentLevel::Processed => CommitmentConfig::processed(),
     };
 
-    let foo = tokio::spawn(async move {
+    tokio::spawn(async move {
         // connect to grpc
         let mut client = GeyserGrpcClient::connect(grpc_addr, grpc_x_token, None)?;
         let mut stream = client
@@ -375,18 +389,16 @@ fn create_blockmeta_processing_task(
             };
         }
         bail!("geyser slot stream ended");
-    });
-
-    foo
+    })
 }
 
-
-fn process_blockmeta(block_meta: SubscribeUpdateBlockMeta, commitment_config: CommitmentConfig) -> SimpleBlockMeta {
+fn process_blockmeta(
+    block_meta: SubscribeUpdateBlockMeta,
+    commitment_config: CommitmentConfig,
+) -> SimpleBlockMeta {
     SimpleBlockMeta {
         slot: block_meta.slot,
         parent_slot: block_meta.parent_slot,
-        commitment_config: commitment_config,
+        commitment_config,
     }
 }
-
-

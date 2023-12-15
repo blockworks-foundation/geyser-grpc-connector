@@ -1,24 +1,11 @@
+use crate::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GrpcSourceConfig};
 use async_stream::stream;
 use futures::{Stream, StreamExt};
 use itertools::Itertools;
-use log::{debug, info, warn};
+use log::{debug, info};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
-use std::collections::HashMap;
-use std::pin::{pin, Pin};
-use tokio::task::JoinHandle;
-use tokio::time::{sleep, Duration};
-use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientError, GeyserGrpcClientResult};
-use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::geyser::SubscribeUpdateBlockMeta;
-use yellowstone_grpc_proto::geyser::{
-    CommitmentLevel, SubscribeRequestFilterBlocks, SubscribeUpdate,
-};
-use yellowstone_grpc_proto::prelude::SubscribeRequestFilterBlocksMeta;
-use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
-use yellowstone_grpc_proto::tonic::{async_trait, Status};
-use crate::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GrpcSourceConfig};
-
+use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 
 pub trait FromYellowstoneMapper {
     // Target is something like ProducedBlock
@@ -26,27 +13,23 @@ pub trait FromYellowstoneMapper {
     fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)>;
 }
 
-struct ExtractBlock(CommitmentConfig);
-
-struct ExtractBlockMeta(CommitmentConfig);
-
-
 pub fn create_multiplex<E>(
     // TODO provide list of streams
     grpc_sources: Vec<GrpcSourceConfig>,
     commitment_config: CommitmentConfig,
     extractor: E,
 ) -> impl Stream<Item = E::Target>
-    where
-        E: FromYellowstoneMapper,
+where
+    E: FromYellowstoneMapper,
 {
     assert!(
         commitment_config == CommitmentConfig::confirmed()
             || commitment_config == CommitmentConfig::finalized(),
-        "Only CONFIRMED and FINALIZED is supported");
+        "Only CONFIRMED and FINALIZED is supported"
+    );
     // note: PROCESSED blocks are not sequential in presense of forks; this will break the logic
 
-    if grpc_sources.len() < 1 {
+    if grpc_sources.is_empty() {
         panic!("Must have at least one source");
     }
 
@@ -72,9 +55,9 @@ pub fn create_multiplex<E>(
 }
 
 fn map_updates<S, E>(geyser_stream: S, mapper: E) -> impl Stream<Item = E::Target>
-    where
-        S: Stream<Item = Option<SubscribeUpdate>>,
-        E: FromYellowstoneMapper,
+where
+    S: Stream<Item = Option<SubscribeUpdate>>,
+    E: FromYellowstoneMapper,
 {
     let mut tip: Slot = 0;
     stream! {
@@ -96,4 +79,3 @@ fn map_updates<S, E>(geyser_stream: S, mapper: E) -> impl Stream<Item = E::Targe
         }
     }
 }
-

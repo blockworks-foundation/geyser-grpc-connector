@@ -1,13 +1,9 @@
-/// Experiments with the drain-to-tip pattern used for GRPC multiplexing.
-///
-use std::fmt::Display;
 use derive_more::Display;
-use futures::StreamExt;
 
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use tokio::select;
 use tokio::sync::broadcast::{Receiver, Sender};
-use tokio::time::{Duration, sleep};
+use tokio::time::{sleep, Duration};
 
 #[derive(Debug, Clone, Display)]
 struct Message {
@@ -46,12 +42,14 @@ async fn main() {
     info!("Shutdown completed.");
 }
 
-
 // this service is dedicated to one source channel which produces a monotonic stream of messages qualified by slot number
 // service maintains a tip variable which is updated by different part of system
 // service response to tip changes by blocking until the message received from stream has slot number greater than the tip
 // service "offers" this message to the rest of the system
-async fn start_progressor(mut blocks_notifier: Receiver<Message>, mut rx_tip: tokio::sync::watch::Receiver<Message>) {
+async fn start_progressor(
+    mut blocks_notifier: Receiver<Message>,
+    mut rx_tip: tokio::sync::watch::Receiver<Message>,
+) {
     info!("Started progressor");
     tokio::spawn(async move {
         let mut local_tip = Message::new(3);
@@ -76,7 +74,7 @@ async fn start_progressor(mut blocks_notifier: Receiver<Message>, mut rx_tip: to
                 }
 
                 // here goes the strategy: either we get a new block OR a timeout
-                recv_result = blocks_notifier.recv(), if !(highest_block.slot > local_tip.slot) => {
+                recv_result = blocks_notifier.recv(), if highest_block.slot <= local_tip.slot => {
                     debug!("!! block_after_tip.slot > local_tip.slot: {} > {}", highest_block.slot, local_tip.slot);
                     match recv_result {
                         Ok(msg) => {
@@ -103,9 +101,7 @@ async fn start_progressor(mut blocks_notifier: Receiver<Message>, mut rx_tip: to
     });
 }
 
-
 async fn send_stream(message_channel: Sender<Message>) {
-
     // tip is 3
 
     // drain 0 to 3; offer 4, then block
@@ -116,10 +112,4 @@ async fn send_stream(message_channel: Sender<Message>) {
     }
 
     assert_eq!(message_channel.len(), 5);
-
 }
-
-
-
-
-

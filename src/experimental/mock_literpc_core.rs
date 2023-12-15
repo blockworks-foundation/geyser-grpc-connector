@@ -2,17 +2,16 @@ use base64::Engine;
 use itertools::Itertools;
 use solana_sdk::borsh0_10::try_from_slice_unchecked;
 /// This file mocks the core model of the RPC server.
-
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::compute_budget;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::hash::Hash;
 use solana_sdk::instruction::CompiledInstruction;
-use solana_sdk::message::{MessageHeader, v0, VersionedMessage};
 use solana_sdk::message::v0::MessageAddressTableLookup;
+use solana_sdk::message::{v0, MessageHeader, VersionedMessage};
 use solana_sdk::pubkey::Pubkey;
-use solana_sdk::reward_type::RewardType;
+
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::TransactionError;
 use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
@@ -41,7 +40,6 @@ pub struct TransactionInfo {
     pub recent_blockhash: String,
     pub message: String,
 }
-
 
 pub fn map_produced_block(
     block: SubscribeUpdateBlock,
@@ -138,9 +136,9 @@ pub fn map_produced_block(
                         .eq(&compute_budget::id())
                     {
                         if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
-                                      units,
-                                      additional_fee,
-                                  }) = try_from_slice_unchecked(i.data.as_slice())
+                            units,
+                            additional_fee,
+                        }) = try_from_slice_unchecked(i.data.as_slice())
                         {
                             if additional_fee > 0 {
                                 return Some((
@@ -223,4 +221,3 @@ pub fn map_produced_block(
         // rewards,
     }
 }
-
