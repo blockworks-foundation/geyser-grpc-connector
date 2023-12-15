@@ -1,5 +1,3 @@
-mod literpc_core_model;
-
 use std::collections::HashMap;
 use std::pin::pin;
 use futures::{Stream, StreamExt};
@@ -12,7 +10,7 @@ use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequestFilterBloc
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use geyser_grpc_connector::grpc_subscription_autoreconnect::GrpcSourceConfig;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{create_multiplex, FromYellowstoneMapper};
-use crate::literpc_core_model::{map_produced_block, ProducedBlock};
+use geyser_grpc_connector::experimental::mock_literpc_core::{map_produced_block, ProducedBlock};
 
 fn start_example_consumer(mut block_stream: impl Stream<Item=ProducedBlock> + Send + 'static) {
     tokio::spawn(async move {
