@@ -10,7 +10,8 @@ use tokio::sync::broadcast::{Receiver};
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequestFilterBlocks, SubscribeRequestFilterBlocksMeta, SubscribeUpdate, SubscribeUpdateBlock};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use geyser_grpc_connector::grpcmultiplex_fastestwins::{create_multiplex, FromYellowstoneMapper, GrpcSourceConfig};
+use geyser_grpc_connector::grpc_subscription_autoreconnect::GrpcSourceConfig;
+use geyser_grpc_connector::grpcmultiplex_fastestwins::{create_multiplex, FromYellowstoneMapper};
 use crate::literpc_core_model::{map_produced_block, ProducedBlock};
 
 fn start_example_consumer(mut block_stream: impl Stream<Item=ProducedBlock> + Send + 'static) {
