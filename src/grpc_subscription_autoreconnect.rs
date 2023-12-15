@@ -1,6 +1,6 @@
 use async_stream::stream;
 use futures::{Stream, StreamExt};
-use log::{info, warn};
+use log::{debug, info, trace, warn};
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -146,24 +146,22 @@ pub fn create_geyser_reconnecting_stream(
                 }
                 ConnectionState::Ready(mut geyser_stream) => {
 
-                    //for await update_message in geyser_stream {
-                        match geyser_stream.next().await {
-                            Some(Ok(update_message)) => {
-                                info!(">message on {}", label);
-                                (ConnectionState::Ready(geyser_stream), Some(update_message))
-                            }
-                            Some(Err(tonic_status)) => {
-                                // TODO identify non-recoverable errors and cancel stream
-                                warn!("Receive error on {} - retrying: {:?}", label, tonic_status);
-                                (ConnectionState::WaitReconnect, None)
-                            }
-                            None =>  {
-                                //TODO should not arrive. Mean the stream close.
-                                warn!("Geyzer stream close on {} - retrying", label);
-                                (ConnectionState::WaitReconnect, None)
-                            }
+                    match geyser_stream.next().await {
+                        Some(Ok(update_message)) => {
+                            trace!("> update message on {}", label);
+                            (ConnectionState::Ready(geyser_stream), Some(update_message))
                         }
-                    //} // -- production loop
+                        Some(Err(tonic_status)) => {
+                            // TODO identify non-recoverable errors and cancel stream
+                            debug!("! error on {} - retrying: {:?}", label, tonic_status);
+                            (ConnectionState::WaitReconnect, None)
+                        }
+                        None =>  {
+                            //TODO should not arrive. Mean the stream close.
+                            warn!("! geyser stream closed on {} - retrying", label);
+                            (ConnectionState::WaitReconnect, None)
+                        }
+                    }
 
                 }
                 ConnectionState::WaitReconnect => {
