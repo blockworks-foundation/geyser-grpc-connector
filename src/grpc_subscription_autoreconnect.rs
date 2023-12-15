@@ -1,3 +1,4 @@
+use crate::grpc_subscription_autoreconnect::Message::Reconnecting;
 use async_stream::stream;
 use futures::{Stream, StreamExt};
 use log::{debug, info, log, trace, warn, Level};
@@ -50,6 +51,11 @@ impl GrpcSourceConfig {
     }
 }
 
+pub enum Message {
+    GeyserSubscribeUpdate(SubscribeUpdate),
+    Reconnecting,
+}
+
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
     NotConnected,
     Connecting(JoinHandle<GeyserGrpcClientResult<S>>),
@@ -62,8 +68,7 @@ enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
 pub fn create_geyser_reconnecting_stream(
     grpc_source: GrpcSourceConfig,
     commitment_config: CommitmentConfig,
-    // TODO do we want Option<SubscribeUpdate>
-) -> impl Stream<Item = Option<SubscribeUpdate>> {
+) -> impl Stream<Item = Message> {
     let label = grpc_source.label.clone();
 
     // solana_sdk -> yellowstone
@@ -148,18 +153,18 @@ pub fn create_geyser_reconnecting_stream(
                         }
                     });
 
-                    (ConnectionState::Connecting(connection_task), None)
+                    (ConnectionState::Connecting(connection_task), Message::Reconnecting)
                 }
 
                 ConnectionState::Connecting(connection_task) => {
                     let subscribe_result = connection_task.await;
 
                      match subscribe_result {
-                        Ok(Ok(subscribed_stream)) => (ConnectionState::Ready(subscribed_stream), None),
+                        Ok(Ok(subscribed_stream)) => (ConnectionState::Ready(subscribed_stream), Message::Reconnecting),
                         Ok(Err(geyser_error)) => {
                              // TODO identify non-recoverable errors and cancel stream
                             warn!("Subscribe failed on {} - retrying: {:?}", label, geyser_error);
-                            (ConnectionState::WaitReconnect, None)
+                            (ConnectionState::WaitReconnect, Message::Reconnecting)
                         },
                         Err(geyser_grpc_task_error) => {
                             panic!("Task aborted - should not happen :{geyser_grpc_task_error}");
@@ -173,17 +178,17 @@ pub fn create_geyser_reconnecting_stream(
                     match geyser_stream.next().await {
                         Some(Ok(update_message)) => {
                             trace!("> recv update message from {}", label);
-                            (ConnectionState::Ready(geyser_stream), Some(update_message))
+                            (ConnectionState::Ready(geyser_stream), Message::GeyserSubscribeUpdate(update_message))
                         }
                         Some(Err(tonic_status)) => {
                             // TODO identify non-recoverable errors and cancel stream
                             debug!("! error on {} - retrying: {:?}", label, tonic_status);
-                            (ConnectionState::WaitReconnect, None)
+                            (ConnectionState::WaitReconnect, Message::Reconnecting)
                         }
                         None =>  {
                             //TODO should not arrive. Mean the stream close.
                             warn!("! geyser stream closed on {} - retrying", label);
-                            (ConnectionState::WaitReconnect, None)
+                            (ConnectionState::WaitReconnect, Message::Reconnecting)
                         }
                     }
 
@@ -192,7 +197,7 @@ pub fn create_geyser_reconnecting_stream(
                 ConnectionState::WaitReconnect => {
                     info!("Waiting a bit, then connect to {}", label);
                     sleep(Duration::from_secs(1)).await;
-                    (ConnectionState::NotConnected, None)
+                    (ConnectionState::NotConnected, Message::Reconnecting)
                 }
 
             }; // -- match

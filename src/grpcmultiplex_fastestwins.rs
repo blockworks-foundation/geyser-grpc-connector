@@ -1,6 +1,8 @@
+use crate::grpc_subscription_autoreconnect::Message;
+use crate::grpc_subscription_autoreconnect::Message::GeyserSubscribeUpdate;
 use async_stream::stream;
 use futures::Stream;
-use log::{debug, info};
+use log::{debug, info, warn};
 use merge_streams::MergeStreams;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -15,7 +17,7 @@ pub trait FromYellowstoneMapper {
 /// use streams created by ``create_geyser_reconnecting_stream``
 /// note: this is agnostic to the type of the stream
 pub fn create_multiplex<M>(
-    grpc_source_streams: Vec<impl Stream<Item = Option<SubscribeUpdate>>>,
+    grpc_source_streams: Vec<impl Stream<Item = Message>>,
     commitment_config: CommitmentConfig,
     mapper: M,
 ) -> impl Stream<Item = M::Target>
@@ -53,14 +55,14 @@ where
 
 fn map_updates<S, E>(merged_streams: S, mapper: E) -> impl Stream<Item = E::Target>
 where
-    S: Stream<Item = Option<SubscribeUpdate>>,
+    S: Stream<Item = Message>,
     E: FromYellowstoneMapper,
 {
     let mut tip: Slot = 0;
     stream! {
         for await update in merged_streams {
             match update {
-                Some(update) => {
+                GeyserSubscribeUpdate(update) => {
                     // take only the update messages we want
                     if let Some((proposed_slot, block)) = mapper.map_yellowstone_update(update) {
                         if proposed_slot > tip {
@@ -69,8 +71,8 @@ where
                         }
                     }
                 }
-                None => {
-                    debug!("Stream sent None"); // TODO waht does that mean?
+                Message::Reconnecting => {
+                    warn!("Stream performs reconnect"); // TODO waht does that mean?
                 }
             }
         }
