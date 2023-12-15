@@ -5,7 +5,9 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use std::pin::pin;
 
 use geyser_grpc_connector::experimental::mock_literpc_core::{map_produced_block, ProducedBlock};
-use geyser_grpc_connector::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GrpcSourceConfig};
+use geyser_grpc_connector::grpc_subscription_autoreconnect::{
+    create_geyser_reconnecting_stream, GrpcSourceConfig,
+};
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{create_multiplex, FromYellowstoneMapper};
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
@@ -56,9 +58,12 @@ pub async fn main() {
     let toxiproxy_config =
         GrpcSourceConfig::new("toxiproxy".to_string(), grpc_addr_mainnet_triton_toxi, None);
 
-    let green_stream = create_geyser_reconnecting_stream(green_config.clone(), CommitmentConfig::finalized());
-    let blue_stream = create_geyser_reconnecting_stream(blue_config.clone(), CommitmentConfig::finalized());
-    let toxiproxy_stream = create_geyser_reconnecting_stream(toxiproxy_config.clone(), CommitmentConfig::finalized());
+    let green_stream =
+        create_geyser_reconnecting_stream(green_config.clone(), CommitmentConfig::finalized());
+    let blue_stream =
+        create_geyser_reconnecting_stream(blue_config.clone(), CommitmentConfig::finalized());
+    let toxiproxy_stream =
+        create_geyser_reconnecting_stream(toxiproxy_config.clone(), CommitmentConfig::finalized());
     let multiplex_stream = create_multiplex(
         vec![green_stream, blue_stream, toxiproxy_stream],
         CommitmentConfig::finalized(),

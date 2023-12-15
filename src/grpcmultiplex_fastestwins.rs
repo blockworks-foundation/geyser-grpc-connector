@@ -1,7 +1,5 @@
-use crate::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GrpcSourceConfig};
 use async_stream::stream;
 use futures::Stream;
-use itertools::Itertools;
 use log::{debug, info};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
