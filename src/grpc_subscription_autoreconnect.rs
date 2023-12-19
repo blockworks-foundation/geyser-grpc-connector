@@ -3,11 +3,8 @@ use futures::{Stream, StreamExt};
 use log::{debug, info, log, trace, warn, Level};
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
-use std::ops::{Add, Sub};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
-use anyhow::Context;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, sleep_until, timeout};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
@@ -18,10 +15,8 @@ use yellowstone_grpc_proto::tonic::{async_trait, Status};
 
 #[async_trait]
 trait GrpcConnectionFactory: Clone {
-    // async fn connect() -> GeyserGrpcClientResult<impl Stream<Item=Result<SubscribeUpdate, Status>>+Sized>;
-    async fn connect_and_subscribe(
-        &self,
-    ) -> GeyserGrpcClientResult<Pin<Box<dyn Stream<Item = Result<SubscribeUpdate, Status>>>>>;
+    async fn connect_and_subscribe(&self)
+        -> GeyserGrpcClientResult<Pin<Box<dyn Stream<Item = Result<SubscribeUpdate, Status>>>>>;
 }
 
 #[derive(Clone, Debug)]
@@ -42,42 +37,47 @@ pub struct GrpcSourceConfig {
 }
 
 impl GrpcSourceConfig {
-    pub fn new(label: String, grpc_addr: String, grpc_x_token: Option<String>) -> Self {
+    /// Create a grpc source without tls and timeouts
+    pub fn new_simple(label: String, grpc_addr: String) -> Self {
         Self {
             label,
             grpc_addr,
-            grpc_x_token,
+            grpc_x_token: None,
             tls_config: None,
             timeouts: None,
         }
     }
-    pub fn new_with_timeout(
+    pub fn new(
         label: String,
         grpc_addr: String,
         grpc_x_token: Option<String>,
+        tls_config: Option<ClientTlsConfig>,
         timeouts: GrpcConnectionTimeouts,
     ) -> Self {
         Self {
             label,
             grpc_addr,
             grpc_x_token,
-            tls_config: None,
+            tls_config,
             timeouts: Some(timeouts),
         }
     }
 }
 
+type Attempt = u32;
+
+// wraps payload and status messages
 pub enum Message {
     GeyserSubscribeUpdate(SubscribeUpdate),
-    // connect (attempt=1) or reconnect(attempt>1)
-    Connecting(u32),
+    // connect (attempt=1) or reconnect(attempt=2..)
+    Connecting(Attempt),
 }
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
-    NotConnected(u32),
-    Connecting(u32, JoinHandle<GeyserGrpcClientResult<S>>),
-    Ready(u32, S),
-    WaitReconnect(u32),
+    NotConnected(Attempt),
+    Connecting(Attempt, JoinHandle<GeyserGrpcClientResult<S>>),
+    Ready(Attempt, S),
+    WaitReconnect(Attempt),
 }
 
 #[derive(Clone)]
@@ -95,14 +95,17 @@ impl GeyserFilter {
             include_entries: Some(false),
         })
     }
+    pub fn blocks_filter(filter: SubscribeRequestFilterBlocks) -> Self {
+        Self::Blocks(filter)
+    }
+    // no parameters available
     pub fn blocks_meta() -> Self {
-        Self::BlocksMeta(SubscribeRequestFilterBlocksMeta {
-        })
+        Self::BlocksMeta(SubscribeRequestFilterBlocksMeta {})
     }
 }
 
 
-// Takes geyser filter for geyser, connect to Geyser and return a generic stream of SubscribeUpdate
+// Take geyser filter, connect to Geyser and return a generic stream of SubscribeUpdate
 // note: stream never terminates
 pub fn create_geyser_reconnecting_stream(
     grpc_source: GrpcSourceConfig,

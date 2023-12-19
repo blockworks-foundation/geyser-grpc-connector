@@ -7,7 +7,7 @@ use std::pin::pin;
 
 use geyser_grpc_connector::experimental::mock_literpc_core::{map_produced_block, ProducedBlock};
 use geyser_grpc_connector::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
-use geyser_grpc_connector::grpcmultiplex_fastestwins::{create_multiplex, FromYellowstoneMapper};
+use geyser_grpc_connector::grpcmultiplex_fastestwins::{create_multiplex, FromYellowstoneExtractor};
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
@@ -32,7 +32,7 @@ fn start_example_blockmeta_consumer(multiplex_stream: impl Stream<Item = BlockMe
 
 struct BlockExtractor(CommitmentConfig);
 
-impl FromYellowstoneMapper for BlockExtractor {
+impl FromYellowstoneExtractor for BlockExtractor {
     type Target = ProducedBlock;
     fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)> {
         match update.update_oneof {
@@ -52,7 +52,7 @@ pub struct BlockMetaMini {
 
 struct BlockMetaExtractor(CommitmentConfig);
 
-impl FromYellowstoneMapper for BlockMetaExtractor {
+impl FromYellowstoneExtractor for BlockMetaExtractor {
     type Target = BlockMetaMini;
     fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)> {
         match update.update_oneof {
@@ -95,11 +95,11 @@ pub async fn main() {
         subscribe_timeout: Duration::from_secs(5),
     };
 
-    let green_config = GrpcSourceConfig::new_with_timeout("greensource".to_string(), grpc_addr_green, grpc_x_token_green, timeouts.clone());
+    let green_config = GrpcSourceConfig::new("greensource".to_string(), grpc_addr_green, grpc_x_token_green, timeouts.clone());
     let blue_config =
-        GrpcSourceConfig::new_with_timeout("bluesource".to_string(), grpc_addr_blue, grpc_x_token_blue, timeouts.clone());
+        GrpcSourceConfig::new("bluesource".to_string(), grpc_addr_blue, grpc_x_token_blue, timeouts.clone());
     let toxiproxy_config =
-        GrpcSourceConfig::new_with_timeout("toxiproxy".to_string(), grpc_addr_toxiproxy, None, timeouts.clone());
+        GrpcSourceConfig::new("toxiproxy".to_string(), grpc_addr_toxiproxy, None, timeouts.clone());
 
     if subscribe_blocks {
         info!("Write Block stream..");
