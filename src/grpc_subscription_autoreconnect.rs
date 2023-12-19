@@ -3,6 +3,7 @@ use futures::{Stream, StreamExt};
 use log::{debug, info, log, trace, warn, Level};
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::pin::Pin;
 use std::time::{Duration, Instant};
 use tokio::task::JoinHandle;
@@ -32,6 +33,12 @@ pub struct GrpcSourceConfig {
     grpc_x_token: Option<String>,
     tls_config: Option<ClientTlsConfig>,
     timeouts: Option<GrpcConnectionTimeouts>,
+}
+
+impl Display for GrpcSourceConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "grpc_addr: {}", crate::obfuscate::url_obfuscate_api_token(&self.grpc_addr))
+    }
 }
 
 impl GrpcSourceConfig {
@@ -198,7 +205,7 @@ pub fn create_geyser_reconnecting_stream(
                         Ok(Ok(subscribed_stream)) => (ConnectionState::Ready(attempt, subscribed_stream), Message::Connecting(attempt)),
                         Ok(Err(geyser_error)) => {
                              // TODO identify non-recoverable errors and cancel stream
-                            warn!("Subscribe failed - retrying: {:?}", geyser_error);
+                            warn!("Subscribe failed on {} - retrying: {:?}", grpc_source, geyser_error);
                             (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         },
                         Err(geyser_grpc_task_error) => {
@@ -212,17 +219,17 @@ pub fn create_geyser_reconnecting_stream(
 
                     match geyser_stream.next().await {
                         Some(Ok(update_message)) => {
-                            trace!("> recv update message");
+                            trace!("> recv update message from {}", grpc_source);
                             (ConnectionState::Ready(attempt, geyser_stream), Message::GeyserSubscribeUpdate(update_message))
                         }
                         Some(Err(tonic_status)) => {
                             // TODO identify non-recoverable errors and cancel stream
-                            debug!("! error - retrying: {:?}", tonic_status);
+                            debug!("! error on {} - retrying: {:?}", grpc_source, tonic_status);
                             (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         }
                         None =>  {
                             //TODO should not arrive. Mean the stream close.
-                            warn!("! geyser stream closed - retrying");
+                            warn!("! geyser stream closed on {} - retrying", grpc_source);
                             (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         }
                     }
@@ -231,7 +238,7 @@ pub fn create_geyser_reconnecting_stream(
 
                 ConnectionState::WaitReconnect(attempt) => {
                     let backoff_secs = 1.5_f32.powi(attempt as i32).min(15.0);
-                    info!("Waiting {} seconds, then reconnect", backoff_secs);
+                    info!("Waiting {} seconds, then reconnect to {}", backoff_secs, grpc_source);
                     sleep(Duration::from_secs_f32(backoff_secs)).await;
                     (ConnectionState::NotConnected(attempt), Message::Connecting(attempt))
                 }

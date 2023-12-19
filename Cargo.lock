@@ -1255,6 +1255,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
  "yellowstone-grpc-client",
  "yellowstone-grpc-proto",
 ]
