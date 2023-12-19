@@ -95,11 +95,11 @@ pub async fn main() {
         subscribe_timeout: Duration::from_secs(5),
     };
 
-    let green_config = GrpcSourceConfig::new("greensource".to_string(), grpc_addr_green, grpc_x_token_green, timeouts.clone());
+    let green_config = GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());
     let blue_config =
-        GrpcSourceConfig::new("bluesource".to_string(), grpc_addr_blue, grpc_x_token_blue, timeouts.clone());
+        GrpcSourceConfig::new(grpc_addr_blue, grpc_x_token_blue, None, timeouts.clone());
     let toxiproxy_config =
-        GrpcSourceConfig::new("toxiproxy".to_string(), grpc_addr_toxiproxy, None, timeouts.clone());
+        GrpcSourceConfig::new(grpc_addr_toxiproxy, None, None, timeouts.clone());
 
     if subscribe_blocks {
         info!("Write Block stream..");

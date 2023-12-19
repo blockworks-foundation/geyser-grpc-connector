@@ -1,3 +1,4 @@
+use std::pin::Pin;
 use crate::grpc_subscription_autoreconnect::Message;
 use crate::grpc_subscription_autoreconnect::Message::GeyserSubscribeUpdate;
 use async_stream::stream;
@@ -21,31 +22,26 @@ struct TaggedMessage {
 }
 
 /// use streams created by ``create_geyser_reconnecting_stream``
-/// note: this is agnostic to the type of the stream
-pub fn create_multiplex<M>(
+/// this is agnostic to the type of the stream
+/// CAUTION: do not try to use with commitment level "processed" as this will form trees (forks) and not a sequence
+pub fn create_multiplex<E>(
     grpc_source_streams: Vec<impl Stream<Item = Message>>,
-    extractor: M,
-) -> impl Stream<Item = M::Target>
+    extractor: E,
+) -> impl Stream<Item = E::Target>
 where
-    M: FromYellowstoneExtractor,
+    E: FromYellowstoneExtractor,
 {
 
     if grpc_source_streams.is_empty() {
-        panic!("Must have at least one source");
+        panic!("Must have at least one grpc source");
     }
 
-    info!(
-        "Starting multiplexer with {} sources",
-        grpc_source_streams.len(),
-    );
-
-    // use merge
-    // let mut futures = futures::stream::SelectAll::new();
+    info!("Starting multiplexer with {} sources", grpc_source_streams.len());
 
     let mut streams = vec![];
     let mut idx = 0;
-    for grpc_source in grpc_source_streams {
-        let tagged = grpc_source.map(move |msg| TaggedMessage {
+    for grpc_stream in grpc_source_streams {
+        let tagged = grpc_stream.map(move |msg| TaggedMessage {
             stream_idx: idx,
             payload: msg,
         });
@@ -58,13 +54,13 @@ where
     extract_payload_from_geyser_updates(merged_streams, extractor)
 }
 
-fn extract_payload_from_geyser_updates<E>(merged_streams: impl Stream<Item = TaggedMessage>, extractor: E) -> impl Stream<Item = E::Target>
+fn extract_payload_from_geyser_updates<E>(merged_stream: impl Stream<Item = TaggedMessage>, extractor: E) -> impl Stream<Item = E::Target>
 where
     E: FromYellowstoneExtractor,
 {
     let mut tip: Slot = 0;
     stream! {
-        for await TaggedMessage {stream_idx, payload} in merged_streams {
+        for await TaggedMessage {stream_idx, payload} in merged_stream {
             match payload {
                 GeyserSubscribeUpdate(update) => {
                     // take only the update messages we want
