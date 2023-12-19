@@ -18,8 +18,6 @@ where
     let jh_channelizer = spawn(async move {
         let mut source_stream = pin!(grpc_source_stream);
         'main_loop: while let Some(payload) = source_stream.next().await {
-            debug!("multiplex -> ...");
-
             match tx.send(payload) {
                 Ok(receivers) => {
                     trace!("sent data to {} receivers", receivers);
@@ -32,7 +30,7 @@ where
                 },
             };
         }
-        panic!("forward task failed");
+        panic!("channelizer task failed");
     });
 
     (multiplexed_messages, jh_channelizer)
