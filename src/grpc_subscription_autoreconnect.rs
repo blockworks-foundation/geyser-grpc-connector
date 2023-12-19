@@ -1,13 +1,13 @@
 use async_stream::stream;
 use futures::{Stream, StreamExt};
 use log::{debug, info, log, trace, warn, Level};
-use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::pin::Pin;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::task::JoinHandle;
-use tokio::time::{sleep, sleep_until, timeout};
+use tokio::time::{sleep, timeout};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
 use yellowstone_grpc_proto::geyser::{SubscribeRequestFilterBlocks, SubscribeUpdate};
 use yellowstone_grpc_proto::prelude::SubscribeRequestFilterBlocksMeta;
@@ -117,13 +117,18 @@ pub fn create_geyser_reconnecting_stream(
 
     // solana_sdk -> yellowstone
     let commitment_level = match commitment_config.commitment {
+        solana_sdk::commitment_config::CommitmentLevel::Processed => {
+            yellowstone_grpc_proto::prelude::CommitmentLevel::Processed
+        }
         solana_sdk::commitment_config::CommitmentLevel::Confirmed => {
             yellowstone_grpc_proto::prelude::CommitmentLevel::Confirmed
         }
         solana_sdk::commitment_config::CommitmentLevel::Finalized => {
             yellowstone_grpc_proto::prelude::CommitmentLevel::Finalized
         }
-        _ => panic!("Only CONFIRMED and FINALIZED is supported/suggested"),
+        _ => {
+            panic!("unsupported commitment level {}", commitment_config.commitment)
+        }
     };
 
     let mut state = ConnectionState::NotConnected(0);
@@ -193,7 +198,7 @@ pub fn create_geyser_reconnecting_stream(
                             .await;
 
                             // maybe not optimal
-                            subscribe_result.map_err(|_| Status::unknown("subscribe timeout"))?
+                            subscribe_result.map_err(|_| Status::unknown("unspecific subscribe timeout"))?
                         }
                     });
 
@@ -206,12 +211,12 @@ pub fn create_geyser_reconnecting_stream(
                      match subscribe_result {
                         Ok(Ok(subscribed_stream)) => (ConnectionState::Ready(attempt, subscribed_stream), Message::Connecting(attempt)),
                         Ok(Err(geyser_error)) => {
-                             // TODO identify non-recoverable errors and cancel stream
-                            warn!("Subscribe failed on {} - retrying: {:?}", grpc_source, geyser_error);
+                             // ATM we consider all errors recoverable
+                            warn!("! subscribe failed on {} - retrying: {:?}", grpc_source, geyser_error);
                             (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         },
                         Err(geyser_grpc_task_error) => {
-                            panic!("Task aborted - should not happen :{geyser_grpc_task_error}");
+                            panic!("! task aborted - should not happen :{geyser_grpc_task_error}");
                         }
                     }
 
@@ -225,14 +230,13 @@ pub fn create_geyser_reconnecting_stream(
                             (ConnectionState::Ready(attempt, geyser_stream), Message::GeyserSubscribeUpdate(update_message))
                         }
                         Some(Err(tonic_status)) => {
-                            // TODO identify non-recoverable errors and cancel stream
+                            // ATM we consider all errors recoverable
                             debug!("! error on {} - retrying: {:?}", grpc_source, tonic_status);
                             (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         }
                         None =>  {
-                            //TODO should not arrive. Mean the stream close.
-                            warn!("! geyser stream closed on {} - retrying", grpc_source);
-                            (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
+                            // should not arrive here, Mean the stream close.
+                            panic!("geyser stream closed on {} - retrying", grpc_source);
                         }
                     }
 
@@ -240,7 +244,7 @@ pub fn create_geyser_reconnecting_stream(
 
                 ConnectionState::WaitReconnect(attempt) => {
                     let backoff_secs = 1.5_f32.powi(attempt as i32).min(15.0);
-                    info!("Waiting {} seconds, then reconnect to {}", backoff_secs, grpc_source);
+                    info!("! waiting {} seconds, then reconnect to {}", backoff_secs, grpc_source);
                     sleep(Duration::from_secs_f32(backoff_secs)).await;
                     (ConnectionState::NotConnected(attempt), Message::Connecting(attempt))
                 }
