@@ -175,6 +175,8 @@ pub fn create_geyser_reconnecting_stream(
                                 }
                             }
 
+                            debug!("Subscribe with blocks filter {:?} and blocksmeta filter {:?}", blocks_subs, blocksmeta_subs);
+
                             let subscribe_result = timeout(subscribe_timeout.unwrap_or(Duration::MAX),
                                 client
                                     .subscribe_once(
