@@ -7,7 +7,7 @@ use std::pin::pin;
 
 use geyser_grpc_connector::experimental::mock_literpc_core::{map_produced_block, ProducedBlock};
 use geyser_grpc_connector::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
-use geyser_grpc_connector::grpcmultiplex_fastestwins::{create_multiplex, FromYellowstoneExtractor};
+use geyser_grpc_connector::grpcmultiplex_fastestwins::{create_multiplexed_stream, FromYellowstoneExtractor};
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
@@ -109,7 +109,7 @@ pub async fn main() {
             create_geyser_reconnecting_stream(blue_config.clone(), GeyserFilter::blocks_and_txs(), CommitmentConfig::confirmed());
         let toxiproxy_stream =
             create_geyser_reconnecting_stream(toxiproxy_config.clone(), GeyserFilter::blocks_and_txs(), CommitmentConfig::confirmed());
-        let multiplex_stream = create_multiplex(
+        let multiplex_stream = create_multiplexed_stream(
             vec![green_stream, blue_stream, toxiproxy_stream],
             BlockExtractor(CommitmentConfig::confirmed()),
         );
@@ -124,7 +124,7 @@ pub async fn main() {
             create_geyser_reconnecting_stream(blue_config.clone(), GeyserFilter::blocks_meta(), CommitmentConfig::confirmed());
         let toxiproxy_stream =
             create_geyser_reconnecting_stream(toxiproxy_config.clone(), GeyserFilter::blocks_meta(), CommitmentConfig::confirmed());
-        let multiplex_stream = create_multiplex(
+        let multiplex_stream = create_multiplexed_stream(
             vec![green_stream, blue_stream, toxiproxy_stream],
             BlockMetaExtractor(CommitmentConfig::confirmed()),
         );

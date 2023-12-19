@@ -37,7 +37,7 @@ pub struct GrpcSourceConfig {
 
 impl Display for GrpcSourceConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "grpc_addr: {}", crate::obfuscate::url_obfuscate_api_token(&self.grpc_addr))
+        write!(f, "grpc_addr {}", crate::obfuscate::url_obfuscate_api_token(&self.grpc_addr))
     }
 }
 

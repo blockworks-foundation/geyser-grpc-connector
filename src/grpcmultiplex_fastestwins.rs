@@ -16,15 +16,10 @@ pub trait FromYellowstoneExtractor {
     fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)>;
 }
 
-struct TaggedMessage {
-    pub stream_idx: usize,
-    pub payload: Message,
-}
-
 /// use streams created by ``create_geyser_reconnecting_stream``
 /// this is agnostic to the type of the stream
 /// CAUTION: do not try to use with commitment level "processed" as this will form trees (forks) and not a sequence
-pub fn create_multiplex<E>(
+pub fn create_multiplexed_stream<E>(
     grpc_source_streams: Vec<impl Stream<Item = Message>>,
     extractor: E,
 ) -> impl Stream<Item = E::Target>
@@ -52,6 +47,12 @@ where
     let merged_streams = streams.merge();
 
     extract_payload_from_geyser_updates(merged_streams, extractor)
+}
+
+
+struct TaggedMessage {
+    pub stream_idx: usize,
+    pub payload: Message,
 }
 
 fn extract_payload_from_geyser_updates<E>(merged_stream: impl Stream<Item = TaggedMessage>, extractor: E) -> impl Stream<Item = E::Target>
