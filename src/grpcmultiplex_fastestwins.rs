@@ -24,18 +24,11 @@ struct TaggedMessage {
 /// note: this is agnostic to the type of the stream
 pub fn create_multiplex<M>(
     grpc_source_streams: Vec<impl Stream<Item = Message>>,
-    commitment_config: CommitmentConfig,
     mapper: M,
 ) -> impl Stream<Item = M::Target>
 where
     M: FromYellowstoneMapper,
 {
-    assert!(
-        commitment_config == CommitmentConfig::confirmed()
-            || commitment_config == CommitmentConfig::finalized(),
-        "Only CONFIRMED and FINALIZED is supported"
-    );
-    // note: PROCESSED blocks are not sequential in presense of forks; this will break the logic
 
     if grpc_source_streams.is_empty() {
         panic!("Must have at least one source");
