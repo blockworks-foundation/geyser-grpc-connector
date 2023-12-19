@@ -15,7 +15,6 @@ pub fn url_obfuscate_api_token(url: &str) -> Cow<str> {
     }
 }
 
-
 #[test]
 fn test_obfuscate_path() {
     let url_mango = "http://mango.rpcpool.com/121sdfsdf21";

@@ -1,11 +1,11 @@
 use async_stream::stream;
 use futures::{Stream, StreamExt};
 use log::{debug, info, log, trace, warn, Level};
+use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::pin::Pin;
 use std::time::Duration;
-use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
@@ -16,8 +16,9 @@ use yellowstone_grpc_proto::tonic::{async_trait, Status};
 
 #[async_trait]
 trait GrpcConnectionFactory: Clone {
-    async fn connect_and_subscribe(&self)
-        -> GeyserGrpcClientResult<Pin<Box<dyn Stream<Item = Result<SubscribeUpdate, Status>>>>>;
+    async fn connect_and_subscribe(
+        &self,
+    ) -> GeyserGrpcClientResult<Pin<Box<dyn Stream<Item = Result<SubscribeUpdate, Status>>>>>;
 }
 
 #[derive(Clone, Debug)]
@@ -37,7 +38,11 @@ pub struct GrpcSourceConfig {
 
 impl Display for GrpcSourceConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "grpc_addr {}", crate::obfuscate::url_obfuscate_api_token(&self.grpc_addr))
+        write!(
+            f,
+            "grpc_addr {}",
+            crate::obfuscate::url_obfuscate_api_token(&self.grpc_addr)
+        )
     }
 }
 
@@ -106,7 +111,6 @@ impl GeyserFilter {
     }
 }
 
-
 // Take geyser filter, connect to Geyser and return a generic stream of SubscribeUpdate
 // note: stream never terminates
 pub fn create_geyser_reconnecting_stream(
@@ -114,7 +118,6 @@ pub fn create_geyser_reconnecting_stream(
     filter: GeyserFilter,
     commitment_config: CommitmentConfig,
 ) -> impl Stream<Item = Message> {
-
     // solana_sdk -> yellowstone
     let commitment_level = match commitment_config.commitment {
         solana_sdk::commitment_config::CommitmentLevel::Processed => {
@@ -127,7 +130,10 @@ pub fn create_geyser_reconnecting_stream(
             yellowstone_grpc_proto::prelude::CommitmentLevel::Finalized
         }
         _ => {
-            panic!("unsupported commitment level {}", commitment_config.commitment)
+            panic!(
+                "unsupported commitment level {}",
+                commitment_config.commitment
+            )
         }
     };
 
