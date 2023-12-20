@@ -3,6 +3,10 @@ name = "geyser-grpc-connector"
 version = "0.5.0+yellowstone.1.11"
 edition = "2021"
 
+description = "Multiplexing and Reconnection on Yellowstone gRPC Geyser client streaming"
+license = "Apache-2.0"
+authors = ["GroovieGermanikus <groovie@mango.markets>"]
+
 [dependencies]
 # v1.11.0+solana.1.16.17
 yellowstone-grpc-proto = "1.11.0"
