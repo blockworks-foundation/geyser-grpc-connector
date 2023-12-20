@@ -75,7 +75,7 @@ type Attempt = u32;
 
 // wraps payload and status messages
 pub enum Message {
-    GeyserSubscribeUpdate(SubscribeUpdate),
+    GeyserSubscribeUpdate(Box<SubscribeUpdate>),
     // connect (attempt=1) or reconnect(attempt=2..)
     Connecting(Attempt),
 }
@@ -148,7 +148,7 @@ pub fn create_geyser_reconnecting_stream(
             (state, yield_value) = match state {
 
                 ConnectionState::NotConnected(mut attempt) => {
-                    attempt = attempt + 1;
+                    attempt += 1;
 
                     let connection_task = tokio::spawn({
                         let addr = grpc_source.grpc_addr.clone();
@@ -233,7 +233,7 @@ pub fn create_geyser_reconnecting_stream(
                     match geyser_stream.next().await {
                         Some(Ok(update_message)) => {
                             trace!("> recv update message from {}", grpc_source);
-                            (ConnectionState::Ready(attempt, geyser_stream), Message::GeyserSubscribeUpdate(update_message))
+                            (ConnectionState::Ready(attempt, geyser_stream), Message::GeyserSubscribeUpdate(Box::new(update_message)))
                         }
                         Some(Err(tonic_status)) => {
                             // ATM we consider all errors recoverable
