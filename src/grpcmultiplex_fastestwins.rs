@@ -65,7 +65,7 @@ where
             match payload {
                 GeyserSubscribeUpdate(update) => {
                     // take only the update messages we want
-                    if let Some((proposed_slot, block)) = extractor.map_yellowstone_update(update) {
+                    if let Some((proposed_slot, block)) = extractor.map_yellowstone_update(*update) {
                         if proposed_slot > tip {
                             tip = proposed_slot;
                             yield block;
