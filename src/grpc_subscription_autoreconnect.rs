@@ -9,7 +9,7 @@ use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
-use yellowstone_grpc_proto::geyser::{SubscribeRequestFilterBlocks, SubscribeUpdate};
+use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeUpdate};
 use yellowstone_grpc_proto::prelude::SubscribeRequestFilterBlocksMeta;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 use yellowstone_grpc_proto::tonic::{async_trait, Status};
@@ -188,19 +188,21 @@ pub fn create_geyser_reconnecting_stream(
 
                             debug!("Subscribe with blocks filter {:?} and blocksmeta filter {:?}", blocks_subs, blocksmeta_subs);
 
+                            let subscribe_request = SubscribeRequest {
+                                slots: HashMap::new(),
+                                accounts: Default::default(),
+                                transactions: HashMap::new(),
+                                entry: Default::default(),
+                                blocks: blocks_subs,
+                                blocks_meta: blocksmeta_subs,
+                                commitment: Some(commitment_level as i32),
+                                accounts_data_slice: Default::default(),
+                                ping: None,
+                            };
+
                             let subscribe_result = timeout(subscribe_timeout.unwrap_or(Duration::MAX),
                                 client
-                                    .subscribe_once(
-                                        HashMap::new(),
-                                        Default::default(),
-                                        HashMap::new(),
-                                        Default::default(),
-                                        blocks_subs,
-                                        blocksmeta_subs,
-                                        Some(commitment_level),
-                                        Default::default(),
-                                        None,
-                                    ))
+                                    .subscribe_once2(subscribe_request))
                             .await;
 
                             // maybe not optimal
