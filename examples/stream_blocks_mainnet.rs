@@ -145,17 +145,14 @@ pub async fn main() {
         let green_stream = create_geyser_reconnecting_stream(
             green_config.clone(),
             GeyserFilter(CommitmentConfig::confirmed()).blocks_and_txs(),
-            CommitmentConfig::confirmed(),
         );
         let blue_stream = create_geyser_reconnecting_stream(
             blue_config.clone(),
             GeyserFilter(CommitmentConfig::confirmed()).blocks_and_txs(),
-            CommitmentConfig::confirmed(),
         );
         let toxiproxy_stream = create_geyser_reconnecting_stream(
             toxiproxy_config.clone(),
             GeyserFilter(CommitmentConfig::confirmed()).blocks_and_txs(),
-            CommitmentConfig::confirmed(),
         );
         let multiplex_stream = create_multiplexed_stream(
             vec![green_stream, blue_stream, toxiproxy_stream],
@@ -169,17 +166,14 @@ pub async fn main() {
         let green_stream = create_geyser_reconnecting_stream(
             green_config.clone(),
             GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
-            CommitmentConfig::confirmed(),
         );
         let blue_stream = create_geyser_reconnecting_stream(
             blue_config.clone(),
             GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
-            CommitmentConfig::confirmed(),
         );
         let toxiproxy_stream = create_geyser_reconnecting_stream(
             toxiproxy_config.clone(),
             GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
-            CommitmentConfig::confirmed(),
         );
         let multiplex_stream = create_multiplexed_stream(
             vec![green_stream, blue_stream, toxiproxy_stream],

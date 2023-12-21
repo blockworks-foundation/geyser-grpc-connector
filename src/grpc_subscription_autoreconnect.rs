@@ -166,7 +166,6 @@ fn map_commitment_level(commitment_config: CommitmentConfig) -> CommitmentLevel 
 pub fn create_geyser_reconnecting_stream(
     grpc_source: GrpcSourceConfig,
     subscribe_filter: SubscribeRequest,
-    commitment_config: CommitmentConfig,
 ) -> impl Stream<Item = Message> {
 
     let mut state = ConnectionState::NotConnected(0);
