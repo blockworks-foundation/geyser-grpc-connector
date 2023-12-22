@@ -5,7 +5,6 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
 use std::pin::pin;
 
-
 use base64::Engine;
 use itertools::Itertools;
 use solana_sdk::borsh0_10::try_from_slice_unchecked;
@@ -21,7 +20,6 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::TransactionError;
 use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
-
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect::{
     create_geyser_reconnecting_stream, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig,
@@ -186,7 +184,6 @@ pub async fn main() {
     sleep(Duration::from_secs(1800)).await;
 }
 
-
 #[derive(Default, Debug, Clone)]
 pub struct ProducedBlock {
     pub transactions: Vec<TransactionInfo>,
@@ -307,9 +304,9 @@ pub fn map_produced_block(
                         .eq(&compute_budget::id())
                     {
                         if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
-                                      units,
-                                      additional_fee,
-                                  }) = try_from_slice_unchecked(i.data.as_slice())
+                            units,
+                            additional_fee,
+                        }) = try_from_slice_unchecked(i.data.as_slice())
                         {
                             if additional_fee > 0 {
                                 return Some((

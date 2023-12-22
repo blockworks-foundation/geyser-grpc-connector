@@ -9,7 +9,9 @@ use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
-use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeUpdate};
+use yellowstone_grpc_proto::geyser::{
+    CommitmentLevel, SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeUpdate,
+};
 use yellowstone_grpc_proto::prelude::SubscribeRequestFilterBlocksMeta;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 use yellowstone_grpc_proto::tonic::{async_trait, Status};
@@ -91,7 +93,6 @@ enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
 pub struct GeyserFilter(pub CommitmentConfig);
 
 impl GeyserFilter {
-
     pub fn blocks_and_txs(&self) -> SubscribeRequest {
         let mut blocks_subs = HashMap::new();
         blocks_subs.insert(
@@ -119,10 +120,7 @@ impl GeyserFilter {
 
     pub fn blocks_meta(&self) -> SubscribeRequest {
         let mut blocksmeta_subs = HashMap::new();
-        blocksmeta_subs.insert(
-            "client".to_string(),
-            SubscribeRequestFilterBlocksMeta {},
-        );
+        blocksmeta_subs.insert("client".to_string(), SubscribeRequestFilterBlocksMeta {});
 
         SubscribeRequest {
             slots: HashMap::new(),
@@ -138,10 +136,9 @@ impl GeyserFilter {
     }
 }
 
-
 fn map_commitment_level(commitment_config: CommitmentConfig) -> CommitmentLevel {
-// solana_sdk -> yellowstone
-    let commitment_level = match commitment_config.commitment {
+    // solana_sdk -> yellowstone
+    match commitment_config.commitment {
         solana_sdk::commitment_config::CommitmentLevel::Processed => {
             yellowstone_grpc_proto::prelude::CommitmentLevel::Processed
         }
@@ -157,8 +154,7 @@ fn map_commitment_level(commitment_config: CommitmentConfig) -> CommitmentLevel 
                 commitment_config.commitment
             )
         }
-    };
-    commitment_level
+    }
 }
 
 // Take geyser filter, connect to Geyser and return a generic stream of SubscribeUpdate
@@ -167,7 +163,6 @@ pub fn create_geyser_reconnecting_stream(
     grpc_source: GrpcSourceConfig,
     subscribe_filter: SubscribeRequest,
 ) -> impl Stream<Item = Message> {
-
     let mut state = ConnectionState::NotConnected(0);
 
     // in case of cancellation, we restart from here:
@@ -242,7 +237,7 @@ pub fn create_geyser_reconnecting_stream(
                         }
                         Some(Err(tonic_status)) => {
                             // ATM we consider all errors recoverable
-                            debug!("! error on {} - retrying: {:?}", grpc_source, tonic_status);
+                            warn!("! error on {} - retrying: {:?}", grpc_source, tonic_status);
                             (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         }
                         None =>  {
