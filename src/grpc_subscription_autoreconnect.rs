@@ -4,7 +4,6 @@ use log::{debug, info, log, trace, warn, Level};
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
 use std::fmt::Display;
-use std::pin::Pin;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
@@ -14,14 +13,7 @@ use yellowstone_grpc_proto::geyser::{
 };
 use yellowstone_grpc_proto::prelude::SubscribeRequestFilterBlocksMeta;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
-use yellowstone_grpc_proto::tonic::{async_trait, Status};
-
-#[async_trait]
-trait GrpcConnectionFactory: Clone {
-    async fn connect_and_subscribe(
-        &self,
-    ) -> GeyserGrpcClientResult<Pin<Box<dyn Stream<Item = Result<SubscribeUpdate, Status>>>>>;
-}
+use yellowstone_grpc_proto::tonic::Status;
 
 #[derive(Clone, Debug)]
 pub struct GrpcConnectionTimeouts {
