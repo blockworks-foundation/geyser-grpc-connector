@@ -15,7 +15,11 @@ The implementation is based on _Rust Futures_.
 
 Please open an issue if you have any questions or suggestions ->  [New Issue](https://github.com/blockworks-foundation/geyser-grpc-connector/issues/new).
 
-## Usage
+## Installation and Usage
+
+```cargo add geyser-grpc-connector ```
+
+
 An example how to use the library is provided in `stream_blocks_mainnet.rs`.
 
 ## Known issues
