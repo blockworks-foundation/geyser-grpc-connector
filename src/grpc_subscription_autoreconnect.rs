@@ -8,6 +8,7 @@ use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
+use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{
     CommitmentLevel, SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeUpdate,
 };
@@ -224,7 +225,11 @@ pub fn create_geyser_reconnecting_stream(
 
                     match geyser_stream.next().await {
                         Some(Ok(update_message)) => {
-                            trace!("> recv update message from {}", grpc_source);
+                            if let Some(UpdateOneof::Ping(_)) = &update_message.update_oneof {
+                                trace!("> recv ping message from {}", grpc_source);
+                            } else {
+                                trace!("> recv update message from {}", grpc_source);
+                            }
                             (ConnectionState::Ready(attempt, geyser_stream), Message::GeyserSubscribeUpdate(Box::new(update_message)))
                         }
                         Some(Err(tonic_status)) => {
