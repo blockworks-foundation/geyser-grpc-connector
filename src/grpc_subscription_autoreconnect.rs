@@ -141,10 +141,11 @@ fn map_commitment_level(commitment_config: CommitmentConfig) -> CommitmentLevel 
             yellowstone_grpc_proto::prelude::CommitmentLevel::Finalized
         }
         _ => {
-            panic!(
-                "unsupported commitment level {}",
+            log::error!(
+                "unsupported commitment level {}, defaulting to finalized",
                 commitment_config.commitment
-            )
+            );
+            yellowstone_grpc_proto::prelude::CommitmentLevel::Finalized
         }
     }
 }
@@ -214,7 +215,8 @@ pub fn create_geyser_reconnecting_stream(
                             (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         },
                         Err(geyser_grpc_task_error) => {
-                            panic!("! task aborted - should not happen :{geyser_grpc_task_error}");
+                            warn!("task aborted reconnect error: {}", geyser_grpc_task_error);
+                            (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         }
                     }
 
@@ -234,7 +236,9 @@ pub fn create_geyser_reconnecting_stream(
                         }
                         None =>  {
                             // should not arrive here, Mean the stream close.
-                            panic!("geyser stream closed on {} - retrying", grpc_source);
+                            // reconnect
+                            warn!("task aborted reconnect");
+                            (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         }
                     }
 
