@@ -234,7 +234,8 @@ pub fn create_geyser_reconnecting_stream(
                         }
                         None =>  {
                             // should not arrive here, Mean the stream close.
-                            panic!("geyser stream closed on {} - retrying", grpc_source);
+                            warn!("geyser stream closed on {} - retrying", grpc_source);
+                            (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         }
                     }
 
