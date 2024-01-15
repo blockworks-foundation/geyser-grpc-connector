@@ -9,10 +9,13 @@ use merge_streams::MergeStreams;
 use std::collections::HashMap;
 use tokio::sync::broadcast::Sender;
 use yellowstone_grpc_client::GeyserGrpcClient;
-use yellowstone_grpc_proto::{prelude::{
-    subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequestFilterBlocks,
-    SubscribeUpdateBlock,
-}, geyser::SlotParallelization};
+use yellowstone_grpc_proto::{
+    geyser::SlotParallelization,
+    prelude::{
+        subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequestFilterBlocks,
+        SubscribeUpdateBlock,
+    },
+};
 
 pub fn create_block_processing_task(
     grpc_addr: String,
@@ -21,7 +24,6 @@ pub fn create_block_processing_task(
     commitment_level: CommitmentLevel,
     parallelization: i32,
 ) -> tokio::task::JoinHandle<anyhow::Result<()>> {
-
     tokio::spawn(async move {
         // connect to grpc
         let mut client = GeyserGrpcClient::connect(grpc_addr, grpc_x_token, None)?;
@@ -38,18 +40,18 @@ pub fn create_block_processing_task(
                 },
             );
             let s = client
-            .subscribe_once(
-                HashMap::new(),
-                Default::default(),
-                HashMap::new(),
-                Default::default(),
-                blocks_subs,
-                Default::default(),
-                Some(commitment_level),
-                Default::default(),
-                None,
-            )
-            .await?;
+                .subscribe_once(
+                    HashMap::new(),
+                    Default::default(),
+                    HashMap::new(),
+                    Default::default(),
+                    blocks_subs,
+                    Default::default(),
+                    Some(commitment_level),
+                    Default::default(),
+                    None,
+                )
+                .await?;
             vec![s].merge()
         } else {
             let mut streams = vec![];
@@ -64,23 +66,25 @@ pub fn create_block_processing_task(
                         include_entries: Some(false),
                         slot_parallelization: Some(SlotParallelization {
                             filter_id,
-                            filter_size: parallelization
-                        })
+                            filter_size: parallelization,
+                        }),
                     },
                 );
-                streams.push(client
-                    .subscribe_once(
-                        HashMap::new(),
-                        Default::default(),
-                        HashMap::new(),
-                        Default::default(),
-                        blocks_subs,
-                        Default::default(),
-                        Some(commitment_level),
-                        Default::default(),
-                        None,
-                    )
-                    .await?);
+                streams.push(
+                    client
+                        .subscribe_once(
+                            HashMap::new(),
+                            Default::default(),
+                            HashMap::new(),
+                            Default::default(),
+                            blocks_subs,
+                            Default::default(),
+                            Some(commitment_level),
+                            Default::default(),
+                            None,
+                        )
+                        .await?,
+                );
             }
             streams.merge()
         };
