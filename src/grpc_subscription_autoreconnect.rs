@@ -25,8 +25,8 @@ pub struct GrpcConnectionTimeouts {
 
 #[derive(Clone, Debug)]
 pub struct GrpcSourceConfig {
-    grpc_addr: String,
-    grpc_x_token: Option<String>,
+    pub grpc_addr: String,
+    pub grpc_x_token: Option<String>,
     tls_config: Option<ClientTlsConfig>,
     timeouts: Option<GrpcConnectionTimeouts>,
 }
