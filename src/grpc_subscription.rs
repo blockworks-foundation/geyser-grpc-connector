@@ -5,42 +5,39 @@
 use anyhow::{bail, Context};
 use futures::StreamExt;
 
-use solana_sdk::commitment_config::CommitmentConfig;
+use merge_streams::MergeStreams;
 use std::collections::HashMap;
 use tokio::sync::broadcast::Sender;
 use yellowstone_grpc_client::GeyserGrpcClient;
-use yellowstone_grpc_proto::prelude::{
+use yellowstone_grpc_proto::{prelude::{
     subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequestFilterBlocks,
     SubscribeUpdateBlock,
-};
+}, geyser::SlotParallelization};
 
 pub fn create_block_processing_task(
     grpc_addr: String,
     grpc_x_token: Option<String>,
     block_sx: Sender<SubscribeUpdateBlock>,
     commitment_level: CommitmentLevel,
+    parallelization: i32,
 ) -> tokio::task::JoinHandle<anyhow::Result<()>> {
-    let mut blocks_subs = HashMap::new();
-    blocks_subs.insert(
-        "client".to_string(),
-        SubscribeRequestFilterBlocks {
-            account_include: Default::default(),
-            include_transactions: Some(true),
-            include_accounts: Some(false),
-            include_entries: Some(false),
-        },
-    );
-
-    let _commitment_config = match commitment_level {
-        CommitmentLevel::Confirmed => CommitmentConfig::confirmed(),
-        CommitmentLevel::Finalized => CommitmentConfig::finalized(),
-        CommitmentLevel::Processed => CommitmentConfig::processed(),
-    };
 
     tokio::spawn(async move {
         // connect to grpc
         let mut client = GeyserGrpcClient::connect(grpc_addr, grpc_x_token, None)?;
-        let mut stream = client
+        let mut stream = if parallelization > 1 {
+            let mut blocks_subs = HashMap::new();
+            blocks_subs.insert(
+                "client".to_string(),
+                SubscribeRequestFilterBlocks {
+                    account_include: Default::default(),
+                    include_transactions: Some(true),
+                    include_accounts: Some(false),
+                    include_entries: Some(false),
+                    slot_parallelization: None,
+                },
+            );
+            let s = client
             .subscribe_once(
                 HashMap::new(),
                 Default::default(),
@@ -53,6 +50,40 @@ pub fn create_block_processing_task(
                 None,
             )
             .await?;
+            vec![s].merge()
+        } else {
+            let mut streams = vec![];
+            for filter_id in 0..parallelization {
+                let mut blocks_subs = HashMap::new();
+                blocks_subs.insert(
+                    format!("block_stream_{}", filter_id),
+                    SubscribeRequestFilterBlocks {
+                        account_include: Default::default(),
+                        include_transactions: Some(true),
+                        include_accounts: Some(false),
+                        include_entries: Some(false),
+                        slot_parallelization: Some(SlotParallelization {
+                            filter_id,
+                            filter_size: parallelization
+                        })
+                    },
+                );
+                streams.push(client
+                    .subscribe_once(
+                        HashMap::new(),
+                        Default::default(),
+                        HashMap::new(),
+                        Default::default(),
+                        blocks_subs,
+                        Default::default(),
+                        Some(commitment_level),
+                        Default::default(),
+                        None,
+                    )
+                    .await?);
+            }
+            streams.merge()
+        };
 
         while let Some(message) = stream.next().await {
             let message = message?;

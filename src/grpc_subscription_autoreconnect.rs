@@ -9,7 +9,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
 use yellowstone_grpc_proto::geyser::{
-    CommitmentLevel, SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeUpdate,
+    CommitmentLevel, SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeUpdate, SlotParallelization,
 };
 use yellowstone_grpc_proto::prelude::SubscribeRequestFilterBlocksMeta;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
@@ -94,6 +94,38 @@ impl GeyserFilter {
                 include_transactions: Some(true),
                 include_accounts: Some(false),
                 include_entries: Some(false),
+                slot_parallelization: None
+            },
+        );
+
+        SubscribeRequest {
+            slots: HashMap::new(),
+            accounts: Default::default(),
+            transactions: HashMap::new(),
+            entry: Default::default(),
+            blocks: blocks_subs,
+            blocks_meta: HashMap::new(),
+            commitment: Some(map_commitment_level(self.0) as i32),
+            accounts_data_slice: Default::default(),
+            ping: None,
+        }
+    }
+
+    pub fn blocks_and_txs_with_parallelization(&self, parallelization_id: i32, parallelization_limit: i32) -> SubscribeRequest {
+        let mut blocks_subs = HashMap::new();
+        blocks_subs.insert(
+            "client".to_string(),
+            SubscribeRequestFilterBlocks {
+                account_include: Default::default(),
+                include_transactions: Some(true),
+                include_accounts: Some(false),
+                include_entries: Some(false),
+                slot_parallelization: Some(
+                    SlotParallelization {
+                        filter_id: parallelization_id,
+                        filter_size: parallelization_limit,
+                    }
+                )
             },
         );
 
