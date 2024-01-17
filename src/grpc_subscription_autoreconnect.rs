@@ -3,7 +3,7 @@ use futures::{Stream, StreamExt};
 use log::{debug, info, log, trace, warn, Level};
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
@@ -22,7 +22,7 @@ pub struct GrpcConnectionTimeouts {
     pub subscribe_timeout: Duration,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct GrpcSourceConfig {
     grpc_addr: String,
     grpc_x_token: Option<String>,
@@ -37,6 +37,12 @@ impl Display for GrpcSourceConfig {
             "grpc_addr {}",
             crate::obfuscate::url_obfuscate_api_token(&self.grpc_addr)
         )
+    }
+}
+
+impl Debug for GrpcSourceConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self, f)
     }
 }
 
@@ -256,4 +262,51 @@ pub fn create_geyser_reconnecting_stream(
     }; // -- stream!
 
     the_stream
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_debug_no_secrets() {
+        let timeout_config = GrpcConnectionTimeouts {
+            connect_timeout: Duration::from_secs(1),
+            request_timeout: Duration::from_secs(2),
+            subscribe_timeout: Duration::from_secs(3),
+        };
+        assert_eq!(
+            format!(
+                "{:?}",
+                GrpcSourceConfig::new(
+                    "http://localhost:1234".to_string(),
+                    Some("my-secret".to_string()),
+                    None,
+                    timeout_config
+                )
+            ),
+            "grpc_addr http://localhost:1234"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_display_no_secrets() {
+        let timeout_config = GrpcConnectionTimeouts {
+            connect_timeout: Duration::from_secs(1),
+            request_timeout: Duration::from_secs(2),
+            subscribe_timeout: Duration::from_secs(3),
+        };
+        assert_eq!(
+            format!(
+                "{}",
+                GrpcSourceConfig::new(
+                    "http://localhost:1234".to_string(),
+                    Some("my-secret".to_string()),
+                    None,
+                    timeout_config
+                )
+            ),
+            "grpc_addr http://localhost:1234"
+        );
+    }
 }
