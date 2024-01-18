@@ -355,34 +355,30 @@ pub fn create_geyser_reconnecting_task(
                         client.subscribe_once2(subscribe_filter))
                         .await;
 
-                    let subscribe_result;
-                    match subscribe_result_timeout.map_err(|_| Status::unknown("unspecific subscribe timeout")) {
-                        Ok(fooo) => {
-                            subscribe_result = fooo;
+                    match subscribe_result_timeout {
+                        Ok(subscribe_result) => {
+                            match subscribe_result {
+                                Ok(geyser_stream) => {
+                                    Ready(attempt, geyser_stream)
+                                }
+                                Err(GeyserGrpcClientError::TonicError(_)) => {
+                                    warn!("! subscribe failed on {} - retrying", grpc_source);
+                                    RecoverableConnectionError(attempt)
+                                }
+                                Err(GeyserGrpcClientError::TonicStatus(_)) => {
+                                    warn!("! subscribe failed on {} - retrying", grpc_source);
+                                    RecoverableConnectionError(attempt)
+                                }
+                                // non-recoverable
+                                Err(unrecoverable_error) => {
+                                    error!("! subscribe to {} failed with unrecoverable error: {}", grpc_source, unrecoverable_error);
+                                    FatalError(attempt)
+                                }
+                            }
                         }
                         Err(_elapsed) => {
-                            todo!()
-                        }
-                    }
-                    // maybe not optimal
-                    // let subscribe_result = subscribe_result_timeout.map_err(|_| Status::unknown("unspecific subscribe timeout"));
-
-                    match subscribe_result {
-                        Ok(geyser_stream) => {
-                            Ready(attempt, geyser_stream)
-                        }
-                        Err(GeyserGrpcClientError::TonicError(_)) => {
-                            warn!("! subscribe failed on {} - retrying", grpc_source);
+                            warn!("! subscribe failed with timeout on {} - retrying", grpc_source);
                             RecoverableConnectionError(attempt)
-                        }
-                        Err(GeyserGrpcClientError::TonicStatus(_)) => {
-                            warn!("! subscribe failed on {} - retrying", grpc_source);
-                            RecoverableConnectionError(attempt)
-                        }
-                        // non-recoverable
-                        Err(unrecoverable_error) => {
-                            error!("! subscribe to {} failed with unrecoverable error: {}", grpc_source, unrecoverable_error);
-                            FatalError(attempt)
                         }
                     }
                 }
