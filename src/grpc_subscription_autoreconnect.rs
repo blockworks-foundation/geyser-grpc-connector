@@ -310,8 +310,6 @@ pub fn create_geyser_reconnecting_task(
                     let config = grpc_source.tls_config.clone();
                     let connect_timeout = grpc_source.timeouts.as_ref().map(|t| t.connect_timeout);
                     let request_timeout = grpc_source.timeouts.as_ref().map(|t| t.request_timeout);
-                    let subscribe_timeout = grpc_source.timeouts.as_ref().map(|t| t.subscribe_timeout);
-                    let subscribe_filter = subscribe_filter.clone();
                     log!(if attempt > 1 { Level::Warn } else { Level::Debug }, "Connecting attempt #{} to {}", attempt, addr);
                     let connect_result = GeyserGrpcClient::connect_with_timeout(
                         addr, token, config,
@@ -320,17 +318,32 @@ pub fn create_geyser_reconnecting_task(
                         false)
                         .await;
 
-
                     match connect_result {
                         Ok(client) => {
                             Connected(attempt, client)
                         }
-                        Err(_) => {
-                            todo!()
+                        Err(GeyserGrpcClientError::InvalidUri(_)) => {
+                            FatalError(attempt)
+                        }
+                        Err(GeyserGrpcClientError::MetadataValueError(_)) => {
+                            FatalError(attempt)
+                        }
+                        Err(GeyserGrpcClientError::InvalidXTokenLength(_)) => {
+                            FatalError(attempt)
+                        }
+                        Err(GeyserGrpcClientError::TonicError(tonic_error)) => {
+                            warn!("! connect failed on {} - aborting: {:?}", grpc_source, tonic_error);
+                            FatalError(attempt)
+                        }
+                        Err(GeyserGrpcClientError::TonicStatus(tonic_status)) => {
+                            warn!("! connect failed on {} - retrying: {:?}", grpc_source, tonic_status);
+                            RecoverableConnectionError(attempt)
+                        }
+                        Err(GeyserGrpcClientError::SubscribeSendError(send_error)) => {
+                            warn!("! connect failed with send error on {} - retrying: {:?}", grpc_source, send_error);
+                            RecoverableConnectionError(attempt)
                         }
                     }
-
-
                 }
                 Connected(attempt, mut client) => {
                     let subscribe_timeout = grpc_source.timeouts.as_ref().map(|t| t.subscribe_timeout);
