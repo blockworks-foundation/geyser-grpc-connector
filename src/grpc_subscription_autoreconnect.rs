@@ -13,6 +13,7 @@ use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientError, GeyserGrp
 use yellowstone_grpc_proto::geyser::{
     CommitmentLevel, SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeUpdate,
 };
+use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::prelude::SubscribeRequestFilterBlocksMeta;
 use yellowstone_grpc_proto::tonic;
 use yellowstone_grpc_proto::tonic::codegen::http::uri::InvalidUri;
@@ -80,6 +81,8 @@ impl GrpcSourceConfig {
 type Attempt = u32;
 
 // wraps payload and status messages
+// clone is required by broacast channel
+#[derive(Clone)]
 pub enum Message {
     GeyserSubscribeUpdate(Box<SubscribeUpdate>),
     // connect (attempt=1) or reconnect(attempt=2..)
@@ -283,18 +286,18 @@ enum TheState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
 pub fn create_geyser_reconnecting_task(
     grpc_source: GrpcSourceConfig,
     subscribe_filter: SubscribeRequest,
-) -> Receiver<Message> {
+) -> (JoinHandle<()>, Receiver<Message>) {
     let (tx, rx) = tokio::sync::broadcast::channel::<Message>(1000);
 
-    let geyser_task = tokio::spawn(async move {
-        let mut attempt = 1;
-
+    let jh_geyser_task = tokio::spawn(async move {
         let mut state = NotConnected(0);
 
         loop {
 
             state = match state {
-                NotConnected(_) => {
+                NotConnected(mut attempt) => {
+                    attempt += 1;
+
                     let addr = grpc_source.grpc_addr.clone();
                     let token = grpc_source.grpc_x_token.clone();
                     let config = grpc_source.tls_config.clone();
@@ -309,6 +312,7 @@ pub fn create_geyser_reconnecting_task(
                         request_timeout,
                         false)
                         .await;
+
                     let mut client = connect_result?;
 
                     debug!("Subscribe with filter {:?}", subscribe_filter);
@@ -323,7 +327,7 @@ pub fn create_geyser_reconnecting_task(
 
                     match subscribe_result {
                         Ok(geyser_stream) => {
-                            Connected(geyser_stream)
+                            Connected(attempt, geyser_stream)
                         }
                         Err(GeyserGrpcClientError::TonicError(_)) => {
                             warn!("! subscribe failed on {} - retrying", grpc_source);
@@ -344,10 +348,29 @@ pub fn create_geyser_reconnecting_task(
                     let backoff_secs = 1.5_f32.powi(attempt as i32).min(15.0);
                     info!("! waiting {} seconds, then reconnect to {}", backoff_secs, grpc_source);
                     sleep(Duration::from_secs_f32(backoff_secs)).await;
+                    NotConnected(attempt)
                 }
                 FatalError(_) => {
                     // TOOD what to do
                     panic!("Fatal error")
+                }
+                Connected(attempt, mut geyser_stream) => {
+                    match geyser_stream.next().await {
+                        Some(Ok(update_message)) => {
+                            trace!("> recv update message from {}", grpc_source);
+                            (ConnectionState::Ready(attempt, geyser_stream), Message::GeyserSubscribeUpdate(Box::new(update_message)))
+                        }
+                        Some(Err(tonic_status)) => {
+                            // ATM we consider all errors recoverable
+                            warn!("! error on {} - retrying: {:?}", grpc_source, tonic_status);
+                            (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
+                        }
+                        None =>  {
+                            // should not arrive here, Mean the stream close.
+                            warn!("geyser stream closed on {} - retrying", grpc_source);
+                            (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
+                        }
+                    }
                 }
             }
 
@@ -356,7 +379,7 @@ pub fn create_geyser_reconnecting_task(
     });
 
 
-    rx
+    (jh_geyser_task, rx)
 }
 
 

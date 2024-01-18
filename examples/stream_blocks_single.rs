@@ -5,9 +5,7 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
 use std::pin::pin;
 
-use geyser_grpc_connector::grpc_subscription_autoreconnect::{
-    create_geyser_reconnecting_stream, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig,
-};
+use geyser_grpc_connector::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, create_geyser_reconnecting_task, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
 };
@@ -92,16 +90,32 @@ pub async fn main() {
         GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());
 
     info!("Write Block stream..");
-    let green_stream = create_geyser_reconnecting_stream(
+
+    let (jh_geyser_task, mut green_stream) = create_geyser_reconnecting_task(
         green_config.clone(),
-        GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
-        // GeyserFilter(CommitmentConfig::confirmed()).blocks_and_txs(),
+        GeyserFilter(CommitmentConfig::confirmed()).blocks(),
     );
-    let multiplex_stream = create_multiplexed_stream(
-        vec![green_stream],
-        BlockMiniExtractor(CommitmentConfig::confirmed()),
-    );
-    start_example_blockmini_consumer(multiplex_stream);
+
+    tokio::spawn(async move {
+        while let Some(mini) = green_stream.recv().await {
+            info!(
+                "emitted block mini #{}@{} with {} bytes from multiplexer",
+                mini.slot, mini.commitment_config.commitment, mini.blocksize
+            );
+        }
+    });
+
+
+    // let green_stream = create_geyser_reconnecting_stream(
+    //     green_config.clone(),
+    //     GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
+    //     // GeyserFilter(CommitmentConfig::confirmed()).blocks_and_txs(),
+    // );
+    // let multiplex_stream = create_multiplexed_stream(
+    //     vec![green_stream],
+    //     BlockMiniExtractor(CommitmentConfig::confirmed()),
+    // );
+    // start_example_blockmini_consumer(multiplex_stream);
 
     // "infinite" sleep
     sleep(Duration::from_secs(1800)).await;
