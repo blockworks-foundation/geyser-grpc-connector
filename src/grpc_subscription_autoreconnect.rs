@@ -23,7 +23,7 @@ use yellowstone_grpc_proto::tonic::codegen::http::uri::InvalidUri;
 use yellowstone_grpc_proto::tonic::metadata::errors::InvalidMetadataValue;
 use yellowstone_grpc_proto::tonic::service::Interceptor;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
-use yellowstone_grpc_proto::tonic::Status;
+use yellowstone_grpc_proto::tonic::{Code, Status};
 use crate::grpc_subscription_autoreconnect::TheState::*;
 
 #[derive(Clone, Debug)]
@@ -409,17 +409,16 @@ pub fn create_geyser_reconnecting_task(
                                 };
                             }
                             Some(Err(tonic_status)) => {
-                                // ATM we consider all errors recoverable
+                                // all tonic errors are recoverable
                                 warn!("! error on {} - retrying: {:?}", grpc_source, tonic_status);
                                 break 'recv_loop TheState::WaitReconnect(attempt);
                             }
                             None =>  {
-                                // should not arrive here, Mean the stream close.
                                 warn!("geyser stream closed on {} - retrying", grpc_source);
                                 break 'recv_loop TheState::WaitReconnect(attempt);
                             }
                         }
-                    }
+                    } // -- end loop
                 }
             }
 
@@ -479,3 +478,4 @@ mod tests {
         );
     }
 }
+
