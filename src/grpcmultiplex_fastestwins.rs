@@ -1,5 +1,5 @@
-use crate::grpc_subscription_autoreconnect::Message;
-use crate::grpc_subscription_autoreconnect::Message::GeyserSubscribeUpdate;
+use crate::grpc_subscription_autoreconnect_streams::Message;
+use crate::grpc_subscription_autoreconnect_streams::Message::GeyserSubscribeUpdate;
 use async_stream::stream;
 use futures::{Stream, StreamExt};
 use log::{info, warn};

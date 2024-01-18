@@ -5,14 +5,19 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
 use std::pin::pin;
 
-use geyser_grpc_connector::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, create_geyser_reconnecting_task, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
+use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::{
+    create_geyser_reconnecting_stream, GeyserFilter,
+};
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
 };
 use tokio::time::{sleep, Duration};
+use tracing::warn;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
-use yellowstone_grpc_proto::prost::Message;
+use yellowstone_grpc_proto::prost::Message as _;
+use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::{create_geyser_reconnecting_task, Message};
+use geyser_grpc_connector::{GrpcConnectionTimeouts, GrpcSourceConfig};
 
 fn start_example_blockmini_consumer(
     multiplex_stream: impl Stream<Item = BlockMini> + Send + 'static,
@@ -93,18 +98,23 @@ pub async fn main() {
 
     let (jh_geyser_task, mut green_stream) = create_geyser_reconnecting_task(
         green_config.clone(),
-        GeyserFilter(CommitmentConfig::confirmed()).blocks(),
+        GeyserFilter(CommitmentConfig::confirmed()).blocks_and_txs(),
     );
 
     tokio::spawn(async move {
-        while let Some(mini) = green_stream.recv().await {
-            info!(
-                "emitted block mini #{}@{} with {} bytes from multiplexer",
-                mini.slot, mini.commitment_config.commitment, mini.blocksize
-            );
+        while let Ok(message) = green_stream.recv().await {
+            match message {
+                Message::GeyserSubscribeUpdate(subscriber_update) => {
+                    // info!("got update: {:?}", subscriber_update.update_oneof.);
+                    info!("got update!!!");
+                }
+                Message::Connecting(attempt) => {
+                    warn!("Connection attempt: {}", attempt);
+                }
+            }
         }
+        warn!("Stream aborted");
     });
-
 
     // let green_stream = create_geyser_reconnecting_stream(
     //     green_config.clone(),

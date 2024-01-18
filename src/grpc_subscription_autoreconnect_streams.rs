@@ -1,22 +1,22 @@
 use async_stream::stream;
+use futures::channel::mpsc;
 use futures::{Stream, StreamExt};
-use log::{debug, info, log, trace, warn, Level, error};
+use log::{debug, error, info, log, trace, warn, Level};
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::pin::Pin;
 use std::time::Duration;
-use futures::channel::mpsc;
 use tokio::sync::broadcast::error::SendError;
 use tokio::sync::broadcast::Receiver;
 use tokio::task::JoinHandle;
-use tokio::time::{sleep, timeout, Timeout};
 use tokio::time::error::Elapsed;
+use tokio::time::{sleep, timeout, Timeout};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientError, GeyserGrpcClientResult};
+use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{
     CommitmentLevel, SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeUpdate,
 };
-use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::prelude::SubscribeRequestFilterBlocksMeta;
 use yellowstone_grpc_proto::tonic;
 use yellowstone_grpc_proto::tonic::codegen::http::uri::InvalidUri;
@@ -24,63 +24,7 @@ use yellowstone_grpc_proto::tonic::metadata::errors::InvalidMetadataValue;
 use yellowstone_grpc_proto::tonic::service::Interceptor;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 use yellowstone_grpc_proto::tonic::{Code, Status};
-use crate::grpc_subscription_autoreconnect::TheState::*;
-
-#[derive(Clone, Debug)]
-pub struct GrpcConnectionTimeouts {
-    pub connect_timeout: Duration,
-    pub request_timeout: Duration,
-    pub subscribe_timeout: Duration,
-}
-
-#[derive(Clone)]
-pub struct GrpcSourceConfig {
-    grpc_addr: String,
-    grpc_x_token: Option<String>,
-    tls_config: Option<ClientTlsConfig>,
-    timeouts: Option<GrpcConnectionTimeouts>,
-}
-
-impl Display for GrpcSourceConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "grpc_addr {}",
-            crate::obfuscate::url_obfuscate_api_token(&self.grpc_addr)
-        )
-    }
-}
-
-impl Debug for GrpcSourceConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&self, f)
-    }
-}
-
-impl GrpcSourceConfig {
-    /// Create a grpc source without tls and timeouts
-    pub fn new_simple(grpc_addr: String) -> Self {
-        Self {
-            grpc_addr,
-            grpc_x_token: None,
-            tls_config: None,
-            timeouts: None,
-        }
-    }
-    pub fn new(
-        grpc_addr: String,
-        grpc_x_token: Option<String>,
-        tls_config: Option<ClientTlsConfig>,
-        timeouts: GrpcConnectionTimeouts,
-    ) -> Self {
-        Self {
-            grpc_addr,
-            grpc_x_token,
-            tls_config,
-            timeouts: Some(timeouts),
-        }
-    }
-}
+use crate::GrpcSourceConfig;
 
 type Attempt = u32;
 
@@ -277,172 +221,9 @@ pub fn create_geyser_reconnecting_stream(
     the_stream
 }
 
-
-enum TheState<S: Stream<Item = Result<SubscribeUpdate, Status>>, F: Interceptor> {
-    NotConnected(Attempt),
-    // Connected(Attempt, Box<Pin<GeyserGrpcClient<F>>>),
-    Connected(Attempt, GeyserGrpcClient<F>),
-    Ready(Attempt, S),
-    // error states
-    RecoverableConnectionError(Attempt),
-    FatalError(Attempt),
-    WaitReconnect(Attempt),
-}
-
-
-pub fn create_geyser_reconnecting_task(
-    grpc_source: GrpcSourceConfig,
-    subscribe_filter: SubscribeRequest,
-) -> (JoinHandle<()>, Receiver<Message>) {
-    let (sender, receiver_stream) = tokio::sync::broadcast::channel::<Message>(1000);
-
-    let jh_geyser_task = tokio::spawn(async move {
-        let mut state = NotConnected(0);
-
-        loop {
-
-            state = match state {
-                NotConnected(mut attempt) => {
-                    attempt += 1;
-
-                    let addr = grpc_source.grpc_addr.clone();
-                    let token = grpc_source.grpc_x_token.clone();
-                    let config = grpc_source.tls_config.clone();
-                    let connect_timeout = grpc_source.timeouts.as_ref().map(|t| t.connect_timeout);
-                    let request_timeout = grpc_source.timeouts.as_ref().map(|t| t.request_timeout);
-                    log!(if attempt > 1 { Level::Warn } else { Level::Debug }, "Connecting attempt #{} to {}", attempt, addr);
-                    let connect_result = GeyserGrpcClient::connect_with_timeout(
-                        addr, token, config,
-                        connect_timeout,
-                        request_timeout,
-                        false)
-                        .await;
-
-                    match connect_result {
-                        Ok(client) => {
-                            Connected(attempt, client)
-                        }
-                        Err(GeyserGrpcClientError::InvalidUri(_)) => {
-                            FatalError(attempt)
-                        }
-                        Err(GeyserGrpcClientError::MetadataValueError(_)) => {
-                            FatalError(attempt)
-                        }
-                        Err(GeyserGrpcClientError::InvalidXTokenLength(_)) => {
-                            FatalError(attempt)
-                        }
-                        Err(GeyserGrpcClientError::TonicError(tonic_error)) => {
-                            warn!("! connect failed on {} - aborting: {:?}", grpc_source, tonic_error);
-                            FatalError(attempt)
-                        }
-                        Err(GeyserGrpcClientError::TonicStatus(tonic_status)) => {
-                            warn!("! connect failed on {} - retrying: {:?}", grpc_source, tonic_status);
-                            RecoverableConnectionError(attempt)
-                        }
-                        Err(GeyserGrpcClientError::SubscribeSendError(send_error)) => {
-                            warn!("! connect failed with send error on {} - retrying: {:?}", grpc_source, send_error);
-                            RecoverableConnectionError(attempt)
-                        }
-                    }
-                }
-                Connected(attempt, mut client) => {
-                    let subscribe_timeout = grpc_source.timeouts.as_ref().map(|t| t.subscribe_timeout);
-                    let subscribe_filter = subscribe_filter.clone();
-                    debug!("Subscribe with filter {:?}", subscribe_filter);
-
-                    let subscribe_result_timeout =
-                        timeout(subscribe_timeout.unwrap_or(Duration::MAX),
-                        client.subscribe_once2(subscribe_filter))
-                        .await;
-
-                    match subscribe_result_timeout {
-                        Ok(subscribe_result) => {
-                            match subscribe_result {
-                                Ok(geyser_stream) => {
-                                    Ready(attempt, geyser_stream)
-                                }
-                                Err(GeyserGrpcClientError::TonicError(_)) => {
-                                    warn!("! subscribe failed on {} - retrying", grpc_source);
-                                    RecoverableConnectionError(attempt)
-                                }
-                                Err(GeyserGrpcClientError::TonicStatus(_)) => {
-                                    warn!("! subscribe failed on {} - retrying", grpc_source);
-                                    RecoverableConnectionError(attempt)
-                                }
-                                // non-recoverable
-                                Err(unrecoverable_error) => {
-                                    error!("! subscribe to {} failed with unrecoverable error: {}", grpc_source, unrecoverable_error);
-                                    FatalError(attempt)
-                                }
-                            }
-                        }
-                        Err(_elapsed) => {
-                            warn!("! subscribe failed with timeout on {} - retrying", grpc_source);
-                            RecoverableConnectionError(attempt)
-                        }
-                    }
-                }
-                RecoverableConnectionError(attempt) => {
-                    let backoff_secs = 1.5_f32.powi(attempt as i32).min(15.0);
-                    info!("! waiting {} seconds, then reconnect to {}", backoff_secs, grpc_source);
-                    sleep(Duration::from_secs_f32(backoff_secs)).await;
-                    NotConnected(attempt)
-                }
-                FatalError(_) => {
-                    // TOOD what to do
-                    panic!("Fatal error")
-                }
-                TheState::WaitReconnect(attempt) => {
-                    let backoff_secs = 1.5_f32.powi(attempt as i32).min(15.0);
-                    info!("! waiting {} seconds, then reconnect to {}", backoff_secs, grpc_source);
-                    sleep(Duration::from_secs_f32(backoff_secs)).await;
-                    TheState::NotConnected(attempt)
-                }
-                Ready(attempt, mut geyser_stream) => {
-                    'recv_loop: loop {
-                        match geyser_stream.next().await {
-                            Some(Ok(update_message)) => {
-                                trace!("> recv update message from {}", grpc_source);
-                                match sender.send(Message::GeyserSubscribeUpdate(Box::new(update_message))) {
-                                    Ok(n_subscribers) => {
-                                        trace!("sent update message to {} subscribers (buffer={})",
-                                            n_subscribers,
-                                            sender.len());
-                                        continue 'recv_loop;
-                                    }
-                                    Err(SendError(_)) => {
-                                        // note: error does not mean that future sends will also fail!
-                                        trace!("no subscribers for update message");
-                                        continue 'recv_loop;
-                                    }
-                                };
-                            }
-                            Some(Err(tonic_status)) => {
-                                // all tonic errors are recoverable
-                                warn!("! error on {} - retrying: {:?}", grpc_source, tonic_status);
-                                break 'recv_loop TheState::WaitReconnect(attempt);
-                            }
-                            None =>  {
-                                warn!("geyser stream closed on {} - retrying", grpc_source);
-                                break 'recv_loop TheState::WaitReconnect(attempt);
-                            }
-                        }
-                    } // -- end loop
-                }
-            }
-
-        }
-
-    });
-
-
-    (jh_geyser_task, receiver_stream)
-}
-
-
-
 #[cfg(test)]
 mod tests {
+    use crate::GrpcConnectionTimeouts;
     use super::*;
 
     #[tokio::test]
@@ -487,4 +268,3 @@ mod tests {
         );
     }
 }
-
