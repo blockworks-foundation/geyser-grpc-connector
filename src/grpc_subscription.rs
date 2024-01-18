@@ -4,8 +4,6 @@
 // };
 use anyhow::{bail, Context};
 use futures::StreamExt;
-
-use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
 use tokio::sync::broadcast::Sender;
 use yellowstone_grpc_client::GeyserGrpcClient;
@@ -30,12 +28,6 @@ pub fn create_block_processing_task(
             include_entries: Some(false),
         },
     );
-
-    let _commitment_config = match commitment_level {
-        CommitmentLevel::Confirmed => CommitmentConfig::confirmed(),
-        CommitmentLevel::Finalized => CommitmentConfig::finalized(),
-        CommitmentLevel::Processed => CommitmentConfig::processed(),
-    };
 
     tokio::spawn(async move {
         // connect to grpc

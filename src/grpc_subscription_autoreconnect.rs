@@ -214,7 +214,7 @@ pub fn create_geyser_reconnecting_stream(
                             (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         },
                         Err(geyser_grpc_task_error) => {
-                            log::error!("! task aborted - should not happen :{geyser_grpc_task_error}");
+                            warn!("! task aborted - should not happen :{geyser_grpc_task_error}");
                             (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         }
                     }
@@ -235,7 +235,7 @@ pub fn create_geyser_reconnecting_stream(
                         }
                         None =>  {
                             // should not arrive here, Mean the stream close.
-                            log::error!("! ready stream closed");
+                            warn!("! ready stream closed");
                             (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         }
                     }
