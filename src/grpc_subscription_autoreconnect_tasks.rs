@@ -69,7 +69,13 @@ enum State<S: Stream<Item = Result<SubscribeUpdate, Status>>, F: Interceptor> {
     WaitReconnect(Attempt),
 }
 
-/// return handler will exit on fatal error
+/// connect to grpc source performing autoconect if required,
+/// returns mpsc channel; task will abort on fatal error
+///
+/// implementation hints:
+/// * no panic/unwrap
+/// * do not use "?"
+/// * do not "return" unless you really want to abort the task
 pub fn create_geyser_autoconnection_task(
     grpc_source: GrpcSourceConfig,
     subscribe_filter: SubscribeRequest,
