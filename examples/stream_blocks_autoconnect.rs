@@ -129,17 +129,6 @@ pub async fn main() {
         warn!("Stream aborted");
     });
 
-    // let green_stream = create_geyser_reconnecting_stream(
-    //     green_config.clone(),
-    //     GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
-    //     // GeyserFilter(CommitmentConfig::confirmed()).blocks_and_txs(),
-    // );
-    // let multiplex_stream = create_multiplexed_stream(
-    //     vec![green_stream],
-    //     BlockMiniExtractor(CommitmentConfig::confirmed()),
-    // );
-    // start_example_blockmini_consumer(multiplex_stream);
-
     // "infinite" sleep
     sleep(Duration::from_secs(1800)).await;
 }
