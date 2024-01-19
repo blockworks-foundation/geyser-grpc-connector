@@ -1,3 +1,4 @@
+use crate::GrpcSourceConfig;
 use async_stream::stream;
 use futures::channel::mpsc;
 use futures::{Stream, StreamExt};
@@ -24,7 +25,6 @@ use yellowstone_grpc_proto::tonic::metadata::errors::InvalidMetadataValue;
 use yellowstone_grpc_proto::tonic::service::Interceptor;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 use yellowstone_grpc_proto::tonic::{Code, Status};
-use crate::GrpcSourceConfig;
 
 type Attempt = u32;
 
@@ -155,8 +155,8 @@ pub fn create_geyser_reconnecting_stream(
 
 #[cfg(test)]
 mod tests {
-    use crate::GrpcConnectionTimeouts;
     use super::*;
+    use crate::GrpcConnectionTimeouts;
 
     #[tokio::test]
     async fn test_debug_no_secrets() {

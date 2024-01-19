@@ -5,19 +5,19 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
 use std::pin::pin;
 
-use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::{
-    create_geyser_reconnecting_stream,
+use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
+use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::{
+    create_geyser_autoconnection_task, Message,
 };
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
 };
+use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
 use tokio::time::{sleep, Duration};
 use tracing::warn;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 use yellowstone_grpc_proto::prost::Message as _;
-use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::{create_geyser_autoconnection_task, Message};
-use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
 
 fn start_example_blockmini_consumer(
     multiplex_stream: impl Stream<Item = BlockMini> + Send + 'static,
@@ -70,6 +70,7 @@ impl FromYellowstoneExtractor for BlockMiniExtractor {
     }
 }
 
+#[warn(dead_code)]
 enum TestCases {
     Basic,
     SlowReceiverStartup,
@@ -79,13 +80,11 @@ enum TestCases {
 }
 const TEST_CASE: TestCases = TestCases::TemporaryLaggingReceiver;
 
-
 #[tokio::main]
 pub async fn main() {
     // RUST_LOG=info,stream_blocks_mainnet=debug,geyser_grpc_connector=trace
     tracing_subscriber::fmt::init();
     // console_subscriber::init();
-
 
     let grpc_addr_green = env::var("GRPC_ADDR").expect("need grpc url for green");
     let grpc_x_token_green = env::var("GRPC_X_TOKEN").ok();
@@ -107,19 +106,18 @@ pub async fn main() {
 
     info!("Write Block stream..");
 
-    let (jh_geyser_task, mut green_stream) = create_geyser_autoconnection_task(
+    let (jh_geyser_task, mut message_channel) = create_geyser_autoconnection_task(
         green_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_and_txs(),
     );
 
     tokio::spawn(async move {
-
         if let TestCases::SlowReceiverStartup = TEST_CASE {
             sleep(Duration::from_secs(5)).await;
         }
 
         let mut message_count = 0;
-        while let Some(message) = green_stream.recv().await {
+        while let Some(message) = message_channel.recv().await {
             if let TestCases::AbortTaskFromOutside = TEST_CASE {
                 if message_count > 5 {
                     info!("(testcase) aborting task from outside");
@@ -148,7 +146,6 @@ pub async fn main() {
                     sleep(Duration::from_millis(1500)).await;
                 }
             }
-
         }
         warn!("Stream aborted");
     });

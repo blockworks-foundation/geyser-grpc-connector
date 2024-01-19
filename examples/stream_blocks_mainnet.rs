@@ -21,16 +21,14 @@ use solana_sdk::signature::Signature;
 use solana_sdk::transaction::TransactionError;
 use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
 
-use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::{
-    create_geyser_reconnecting_stream,
-};
+use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
 };
+use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
-use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
 
 fn start_example_block_consumer(
     multiplex_stream: impl Stream<Item = ProducedBlock> + Send + 'static,

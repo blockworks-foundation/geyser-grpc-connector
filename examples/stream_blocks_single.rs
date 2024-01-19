@@ -5,16 +5,18 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
 use std::pin::pin;
 
-use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::{create_geyser_reconnecting_stream, Message};
+use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::{
+    create_geyser_reconnecting_stream, Message,
+};
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
 };
+use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
 use tokio::time::{sleep, Duration};
 use tracing::warn;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 use yellowstone_grpc_proto::prost::Message as _;
-use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
 
 fn start_example_blockmini_consumer(
     multiplex_stream: impl Stream<Item = BlockMini> + Send + 'static,
@@ -93,11 +95,10 @@ pub async fn main() {
 
     info!("Write Block stream..");
 
-    let green_stream= create_geyser_reconnecting_stream(
+    let green_stream = create_geyser_reconnecting_stream(
         green_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_and_txs(),
     );
-
 
     tokio::spawn(async move {
         let mut green_stream = pin!(green_stream);

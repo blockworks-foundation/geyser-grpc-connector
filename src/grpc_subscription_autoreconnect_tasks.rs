@@ -1,3 +1,5 @@
+use crate::GrpcSourceConfig;
+use anyhow::bail;
 use futures::{Stream, StreamExt};
 use log::{debug, error, info, log, trace, warn, Level};
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -6,12 +8,11 @@ use std::fmt::{Debug, Display};
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
-use anyhow::bail;
 use tokio::sync::mpsc::error::{SendError, SendTimeoutError};
 use tokio::sync::mpsc::Receiver;
-use tokio::task::JoinHandle;
+use tokio::task::{AbortHandle, JoinHandle};
 use tokio::time::error::Elapsed;
-use tokio::time::{Instant, sleep, timeout, Timeout};
+use tokio::time::{sleep, timeout, Instant, Timeout};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientError, GeyserGrpcClientResult};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{
@@ -24,7 +25,6 @@ use yellowstone_grpc_proto::tonic::metadata::errors::InvalidMetadataValue;
 use yellowstone_grpc_proto::tonic::service::Interceptor;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 use yellowstone_grpc_proto::tonic::{Code, Status};
-use crate::GrpcSourceConfig;
 
 type Attempt = u32;
 
@@ -35,11 +35,6 @@ pub enum Message {
     GeyserSubscribeUpdate(Box<SubscribeUpdate>),
     // connect (attempt=1) or reconnect(attempt=2..)
     Connecting(Attempt),
-}
-
-#[derive(Debug, Clone)]
-pub enum AutoconnectionError {
-    AbortedFatalError,
 }
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
@@ -79,7 +74,7 @@ enum State<S: Stream<Item = Result<SubscribeUpdate, Status>>, F: Interceptor> {
 pub fn create_geyser_autoconnection_task(
     grpc_source: GrpcSourceConfig,
     subscribe_filter: SubscribeRequest,
-) -> (JoinHandle<Result<(), AutoconnectionError>>, Receiver<Message>) {
+) -> (AbortHandle, Receiver<Message>) {
     // read this for argument: http://www.randomhacks.net/2019/03/08/should-rust-channels-panic-on-send/
     let (sender, receiver_stream) = tokio::sync::mpsc::channel::<Message>(1);
 
@@ -119,9 +114,15 @@ pub fn create_geyser_autoconnection_task(
 
                     match connect_result {
                         Ok(client) => State::Connected(attempt, client),
-                        Err(GeyserGrpcClientError::InvalidUri(_)) => State::FatalError(attempt, FatalErrorReason::ConfigurationError),
-                        Err(GeyserGrpcClientError::MetadataValueError(_)) => State::FatalError(attempt, FatalErrorReason::ConfigurationError),
-                        Err(GeyserGrpcClientError::InvalidXTokenLength(_)) => State::FatalError(attempt, FatalErrorReason::ConfigurationError),
+                        Err(GeyserGrpcClientError::InvalidUri(_)) => {
+                            State::FatalError(attempt, FatalErrorReason::ConfigurationError)
+                        }
+                        Err(GeyserGrpcClientError::MetadataValueError(_)) => {
+                            State::FatalError(attempt, FatalErrorReason::ConfigurationError)
+                        }
+                        Err(GeyserGrpcClientError::InvalidXTokenLength(_)) => {
+                            State::FatalError(attempt, FatalErrorReason::ConfigurationError)
+                        }
                         Err(GeyserGrpcClientError::TonicError(tonic_error)) => {
                             warn!(
                                 "! connect failed on {} - aborting: {:?}",
@@ -197,30 +198,28 @@ pub fn create_geyser_autoconnection_task(
                     sleep(Duration::from_secs_f32(backoff_secs)).await;
                     State::NotConnected(attempt)
                 }
-                State::FatalError(_attempt, reason) => {
-                    match reason {
-                        FatalErrorReason::DownstreamChannelClosed => {
-                            warn!("! downstream closed - aborting");
-                            return Err(AutoconnectionError::AbortedFatalError);
-                        }
-                        FatalErrorReason::ConfigurationError => {
-                            warn!("! fatal configuration error - aborting");
-                            return Err(AutoconnectionError::AbortedFatalError);
-                        }
-                        FatalErrorReason::NetworkError => {
-                            warn!("! fatal network error - aborting");
-                            return Err(AutoconnectionError::AbortedFatalError);
-                        }
-                        FatalErrorReason::SubscribeError => {
-                            warn!("! fatal grpc subscribe error - aborting");
-                            return Err(AutoconnectionError::AbortedFatalError);
-                        }
-                        FatalErrorReason::Misc => {
-                            error!("! fatal misc error grpc connection - aborting");
-                            return Err(AutoconnectionError::AbortedFatalError);
-                        }
+                State::FatalError(_attempt, reason) => match reason {
+                    FatalErrorReason::DownstreamChannelClosed => {
+                        warn!("! downstream closed - aborting");
+                        return;
                     }
-                }
+                    FatalErrorReason::ConfigurationError => {
+                        warn!("! fatal configuration error - aborting");
+                        return;
+                    }
+                    FatalErrorReason::NetworkError => {
+                        warn!("! fatal network error - aborting");
+                        return;
+                    }
+                    FatalErrorReason::SubscribeError => {
+                        warn!("! fatal grpc subscribe error - aborting");
+                        return;
+                    }
+                    FatalErrorReason::Misc => {
+                        error!("! fatal misc error grpc connection - aborting");
+                        return;
+                    }
+                },
                 State::WaitReconnect(attempt) => {
                     let backoff_secs = 1.5_f32.powi(attempt as i32).min(15.0);
                     info!(
@@ -240,17 +239,30 @@ pub fn create_geyser_autoconnection_task(
                                 // TODO extract timeout param; TODO respect startup
                                 // emit warning if message not received
                                 // note: first send never blocks
-                                let warning_threshold = if messages_forwarded == 1 { Duration::from_millis(3000) } else { Duration::from_millis(500) };
+                                let warning_threshold = if messages_forwarded == 1 {
+                                    Duration::from_millis(3000)
+                                } else {
+                                    Duration::from_millis(500)
+                                };
                                 let started_at = Instant::now();
-                                match sender.send_timeout(Message::GeyserSubscribeUpdate(Box::new(update_message)), warning_threshold).await {
+                                match sender
+                                    .send_timeout(
+                                        Message::GeyserSubscribeUpdate(Box::new(update_message)),
+                                        warning_threshold,
+                                    )
+                                    .await
+                                {
                                     Ok(()) => {
                                         messages_forwarded += 1;
                                         if messages_forwarded == 1 {
                                             // note: first send never blocks - do not print time as this is a lie
                                             trace!("queued first update message");
                                         } else {
-                                            trace!("queued update message {} in {:.02}ms",
-                                                messages_forwarded, started_at.elapsed().as_secs_f32() * 1000.0);
+                                            trace!(
+                                                "queued update message {} in {:.02}ms",
+                                                messages_forwarded,
+                                                started_at.elapsed().as_secs_f32() * 1000.0
+                                            );
                                         }
                                         continue 'recv_loop;
                                     }
@@ -260,19 +272,27 @@ pub fn create_geyser_autoconnection_task(
                                         match sender.send(the_message).await {
                                             Ok(()) => {
                                                 messages_forwarded += 1;
-                                                trace!("queued delayed update message {} in {:.02}ms",
-                                                    messages_forwarded, started_at.elapsed().as_secs_f32() * 1000.0);
+                                                trace!(
+                                                    "queued delayed update message {} in {:.02}ms",
+                                                    messages_forwarded,
+                                                    started_at.elapsed().as_secs_f32() * 1000.0
+                                                );
                                             }
-                                            Err(_send_error  ) => {
+                                            Err(_send_error) => {
                                                 warn!("downstream receiver closed, message is lost - aborting");
-                                                break 'recv_loop State::FatalError(attempt, FatalErrorReason::DownstreamChannelClosed);
+                                                break 'recv_loop State::FatalError(
+                                                    attempt,
+                                                    FatalErrorReason::DownstreamChannelClosed,
+                                                );
                                             }
                                         }
-
                                     }
                                     Err(SendTimeoutError::Closed(_)) => {
                                         warn!("downstream receiver closed - aborting");
-                                        break 'recv_loop State::FatalError(attempt, FatalErrorReason::DownstreamChannelClosed);
+                                        break 'recv_loop State::FatalError(
+                                            attempt,
+                                            FatalErrorReason::DownstreamChannelClosed,
+                                        );
                                     }
                                 }
                                 // {
@@ -307,13 +327,13 @@ pub fn create_geyser_autoconnection_task(
         }
     });
 
-    (jh_geyser_task, receiver_stream)
+    (jh_geyser_task.abort_handle(), receiver_stream)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::GrpcConnectionTimeouts;
     use super::*;
+    use crate::GrpcConnectionTimeouts;
 
     #[tokio::test]
     async fn test_debug_no_secrets() {

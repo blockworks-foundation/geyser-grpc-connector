@@ -1250,6 +1250,7 @@ dependencies = [
  "itertools 0.10.5",
  "log",
  "merge-streams",
+ "solana-logger",
  "solana-sdk",
  "tokio",
  "tracing",

@@ -1,16 +1,19 @@
+use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::time::Duration;
-use solana_sdk::commitment_config::CommitmentConfig;
-use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeRequestFilterBlocksMeta};
+use yellowstone_grpc_proto::geyser::{
+    CommitmentLevel, SubscribeRequest, SubscribeRequestFilterBlocks,
+    SubscribeRequestFilterBlocksMeta,
+};
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 
+mod channel_plugger;
 pub mod grpc_subscription;
 pub mod grpc_subscription_autoreconnect_streams;
 pub mod grpc_subscription_autoreconnect_tasks;
 pub mod grpcmultiplex_fastestwins;
 mod obfuscate;
-
 
 #[derive(Clone, Debug)]
 pub struct GrpcConnectionTimeouts {
@@ -67,7 +70,6 @@ impl GrpcSourceConfig {
         }
     }
 }
-
 
 #[derive(Clone)]
 pub struct GeyserFilter(pub CommitmentConfig);
