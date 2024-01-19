@@ -5,9 +5,9 @@ use tokio::sync::mpsc::error::SendTimeoutError;
 use tokio::time::{sleep, timeout};
 
 
-pub fn spawn_plugger_mpcs_to_broadcast(
-    mut upstream: tokio::sync::mpsc::Receiver<u64>,
-    downstream: tokio::sync::broadcast::Sender<u64>,
+pub fn spawn_plugger_mpcs_to_broadcast<T: Send + 'static>(
+    mut upstream: tokio::sync::mpsc::Receiver<T>,
+    downstream: tokio::sync::broadcast::Sender<T>,
 ) {
     // abort forwarder by closing the sender
     let _donothing = tokio::spawn(async move {
