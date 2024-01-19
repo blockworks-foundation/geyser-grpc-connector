@@ -8,11 +8,11 @@ use yellowstone_grpc_proto::geyser::{
 };
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 
-mod channel_plugger;
 pub mod grpc_subscription;
 pub mod grpc_subscription_autoreconnect_streams;
 pub mod grpc_subscription_autoreconnect_tasks;
 pub mod grpcmultiplex_fastestwins;
+pub mod channel_plugger;
 mod obfuscate;
 
 #[derive(Clone, Debug)]

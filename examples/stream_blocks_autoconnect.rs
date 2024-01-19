@@ -18,6 +18,7 @@ use tracing::warn;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 use yellowstone_grpc_proto::prost::Message as _;
+use geyser_grpc_connector::channel_plugger::spawn_plugger_mpcs_to_broadcast;
 
 fn start_example_blockmini_consumer(
     multiplex_stream: impl Stream<Item = BlockMini> + Send + 'static,
@@ -106,10 +107,13 @@ pub async fn main() {
 
     info!("Write Block stream..");
 
+    let (broadcast_tx, broadcast_rx) = tokio::sync::broadcast::channel(100);
     let (jh_geyser_task, mut message_channel) = create_geyser_autoconnection_task(
         green_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_and_txs(),
     );
+    spawn_plugger_mpcs_to_broadcast(message_channel, broadcast_tx);
+    let mut message_channel = broadcast_rx;
 
     tokio::spawn(async move {
         if let TestCases::SlowReceiverStartup = TEST_CASE {
@@ -117,7 +121,7 @@ pub async fn main() {
         }
 
         let mut message_count = 0;
-        while let Some(message) = message_channel.recv().await {
+        while let Ok(message) = message_channel.recv().await {
             if let TestCases::AbortTaskFromOutside = TEST_CASE {
                 if message_count > 5 {
                     info!("(testcase) aborting task from outside");
