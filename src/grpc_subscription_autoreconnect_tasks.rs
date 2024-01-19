@@ -71,7 +71,7 @@ pub fn create_geyser_autoconnection_task(
 
     let jh_geyser_task = tokio::spawn(async move {
         let mut state = NotConnected(0);
-        let mut messages_forwared = 0;
+        let mut messages_forwarded = 0;
 
         loop {
             state = match state {
@@ -206,12 +206,19 @@ pub fn create_geyser_autoconnection_task(
                                 // backpressure - should'n we block here?
                                 // TODO extract timeout param; TODO respect startup
                                 // emit warning if message not received
-                                let warning_threshold = if messages_forwared < 1 { Duration::from_millis(5000) } else { Duration::from_millis(500) };
+                                // note: first send never blocks
+                                let warning_threshold = if messages_forwarded == 1 { Duration::from_millis(3000) } else { Duration::from_millis(500) };
                                 let started_at = Instant::now();
                                 match sender.send_timeout(Message::GeyserSubscribeUpdate(Box::new(update_message)), warning_threshold).await {
                                     Ok(()) => {
-                                        messages_forwared += 1;
-                                        trace!("sent update message to channel in {:.02}ms", started_at.elapsed().as_secs_f32() * 1000.0);
+                                        messages_forwarded += 1;
+                                        if messages_forwarded == 1 {
+                                            // note: first send never blocks - do not print time as this is a lie
+                                            trace!("queued first update message");
+                                        } else {
+                                            trace!("queued update message {} in {:.02}ms",
+                                                messages_forwarded, started_at.elapsed().as_secs_f32() * 1000.0);
+                                        }
                                         continue 'recv_loop;
                                     }
                                     Err(SendTimeoutError::Timeout(the_message)) => {
@@ -219,8 +226,9 @@ pub fn create_geyser_autoconnection_task(
 
                                         match sender.send(the_message).await {
                                             Ok(()) => {
-                                                messages_forwared += 1;
-                                                trace!("sent delayed update message to channel in {:.02}ms", started_at.elapsed().as_secs_f32() * 1000.0);
+                                                messages_forwarded += 1;
+                                                trace!("queued delayed update message {} in {:.02}ms",
+                                                    messages_forwarded, started_at.elapsed().as_secs_f32() * 1000.0);
                                             }
                                             Err(_send_error  ) => {
                                                 warn!("downstream receiver closed, message is lost - aborting");
