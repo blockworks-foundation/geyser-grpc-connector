@@ -1,4 +1,3 @@
-use crate::grpc_subscription_autoreconnect_tasks::State::*;
 use futures::{Stream, StreamExt};
 use log::{debug, error, info, log, trace, warn, Level};
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -50,6 +49,15 @@ enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
     WaitReconnect(Attempt),
 }
 
+enum FatalErrorReason {
+    DownstreamChannelClosed,
+    ConfigurationError,
+    NetworkError,
+    SubscribeError,
+    // everything else
+    Misc,
+}
+
 enum State<S: Stream<Item = Result<SubscribeUpdate, Status>>, F: Interceptor> {
     NotConnected(Attempt),
     Connected(Attempt, GeyserGrpcClient<F>),
@@ -57,7 +65,7 @@ enum State<S: Stream<Item = Result<SubscribeUpdate, Status>>, F: Interceptor> {
     // error states
     RecoverableConnectionError(Attempt),
     // non-recoverable error
-    FatalError(Attempt),
+    FatalError(Attempt, FatalErrorReason),
     WaitReconnect(Attempt),
 }
 
@@ -70,12 +78,12 @@ pub fn create_geyser_autoconnection_task(
     let (sender, receiver_stream) = tokio::sync::mpsc::channel::<Message>(1);
 
     let jh_geyser_task = tokio::spawn(async move {
-        let mut state = NotConnected(0);
+        let mut state = State::NotConnected(0);
         let mut messages_forwarded = 0;
 
         loop {
             state = match state {
-                NotConnected(mut attempt) => {
+                State::NotConnected(mut attempt) => {
                     attempt += 1;
 
                     let addr = grpc_source.grpc_addr.clone();
@@ -104,34 +112,34 @@ pub fn create_geyser_autoconnection_task(
                     .await;
 
                     match connect_result {
-                        Ok(client) => Connected(attempt, client),
-                        Err(GeyserGrpcClientError::InvalidUri(_)) => FatalError(attempt),
-                        Err(GeyserGrpcClientError::MetadataValueError(_)) => FatalError(attempt),
-                        Err(GeyserGrpcClientError::InvalidXTokenLength(_)) => FatalError(attempt),
+                        Ok(client) => State::Connected(attempt, client),
+                        Err(GeyserGrpcClientError::InvalidUri(_)) => State::FatalError(attempt, FatalErrorReason::ConfigurationError),
+                        Err(GeyserGrpcClientError::MetadataValueError(_)) => State::FatalError(attempt, FatalErrorReason::ConfigurationError),
+                        Err(GeyserGrpcClientError::InvalidXTokenLength(_)) => State::FatalError(attempt, FatalErrorReason::ConfigurationError),
                         Err(GeyserGrpcClientError::TonicError(tonic_error)) => {
                             warn!(
                                 "! connect failed on {} - aborting: {:?}",
                                 grpc_source, tonic_error
                             );
-                            FatalError(attempt)
+                            State::FatalError(attempt, FatalErrorReason::NetworkError)
                         }
                         Err(GeyserGrpcClientError::TonicStatus(tonic_status)) => {
                             warn!(
                                 "! connect failed on {} - retrying: {:?}",
                                 grpc_source, tonic_status
                             );
-                            RecoverableConnectionError(attempt)
+                            State::RecoverableConnectionError(attempt)
                         }
                         Err(GeyserGrpcClientError::SubscribeSendError(send_error)) => {
                             warn!(
                                 "! connect failed with send error on {} - retrying: {:?}",
                                 grpc_source, send_error
                             );
-                            RecoverableConnectionError(attempt)
+                            State::RecoverableConnectionError(attempt)
                         }
                     }
                 }
-                Connected(attempt, mut client) => {
+                State::Connected(attempt, mut client) => {
                     let subscribe_timeout =
                         grpc_source.timeouts.as_ref().map(|t| t.subscribe_timeout);
                     let subscribe_filter = subscribe_filter.clone();
@@ -146,14 +154,14 @@ pub fn create_geyser_autoconnection_task(
                     match subscribe_result_timeout {
                         Ok(subscribe_result) => {
                             match subscribe_result {
-                                Ok(geyser_stream) => Ready(attempt, geyser_stream),
+                                Ok(geyser_stream) => State::Ready(attempt, geyser_stream),
                                 Err(GeyserGrpcClientError::TonicError(_)) => {
                                     warn!("! subscribe failed on {} - retrying", grpc_source);
-                                    RecoverableConnectionError(attempt)
+                                    State::RecoverableConnectionError(attempt)
                                 }
                                 Err(GeyserGrpcClientError::TonicStatus(_)) => {
                                     warn!("! subscribe failed on {} - retrying", grpc_source);
-                                    RecoverableConnectionError(attempt)
+                                    State::RecoverableConnectionError(attempt)
                                 }
                                 // non-recoverable
                                 Err(unrecoverable_error) => {
@@ -161,7 +169,7 @@ pub fn create_geyser_autoconnection_task(
                                         "! subscribe to {} failed with unrecoverable error: {}",
                                         grpc_source, unrecoverable_error
                                     );
-                                    FatalError(attempt)
+                                    State::FatalError(attempt, FatalErrorReason::SubscribeError)
                                 }
                             }
                         }
@@ -170,23 +178,42 @@ pub fn create_geyser_autoconnection_task(
                                 "! subscribe failed with timeout on {} - retrying",
                                 grpc_source
                             );
-                            RecoverableConnectionError(attempt)
+                            State::RecoverableConnectionError(attempt)
                         }
                     }
                 }
-                RecoverableConnectionError(attempt) => {
+                State::RecoverableConnectionError(attempt) => {
                     let backoff_secs = 1.5_f32.powi(attempt as i32).min(15.0);
                     info!(
                         "! waiting {} seconds, then reconnect to {}",
                         backoff_secs, grpc_source
                     );
                     sleep(Duration::from_secs_f32(backoff_secs)).await;
-                    NotConnected(attempt)
+                    State::NotConnected(attempt)
                 }
-                FatalError(_) => {
-                    // TOOD what to do
-                    error!("! fatal error grpc connection - aborting");
-                    return Err(AutoconnectionError::AbortedFatalError);
+                State::FatalError(_attempt, reason) => {
+                    match reason {
+                        FatalErrorReason::DownstreamChannelClosed => {
+                            warn!("! downstream closed - aborting");
+                            return Err(AutoconnectionError::AbortedFatalError);
+                        }
+                        FatalErrorReason::ConfigurationError => {
+                            warn!("! fatal configuration error - aborting");
+                            return Err(AutoconnectionError::AbortedFatalError);
+                        }
+                        FatalErrorReason::NetworkError => {
+                            warn!("! fatal network error - aborting");
+                            return Err(AutoconnectionError::AbortedFatalError);
+                        }
+                        FatalErrorReason::SubscribeError => {
+                            warn!("! fatal grpc subscribe error - aborting");
+                            return Err(AutoconnectionError::AbortedFatalError);
+                        }
+                        FatalErrorReason::Misc => {
+                            error!("! fatal misc error grpc connection - aborting");
+                            return Err(AutoconnectionError::AbortedFatalError);
+                        }
+                    }
                 }
                 State::WaitReconnect(attempt) => {
                     let backoff_secs = 1.5_f32.powi(attempt as i32).min(15.0);
@@ -197,7 +224,7 @@ pub fn create_geyser_autoconnection_task(
                     sleep(Duration::from_secs_f32(backoff_secs)).await;
                     State::NotConnected(attempt)
                 }
-                Ready(attempt, mut geyser_stream) => {
+                State::Ready(attempt, mut geyser_stream) => {
                     'recv_loop: loop {
                         match geyser_stream.next().await {
                             Some(Ok(update_message)) => {
@@ -232,14 +259,14 @@ pub fn create_geyser_autoconnection_task(
                                             }
                                             Err(_send_error  ) => {
                                                 warn!("downstream receiver closed, message is lost - aborting");
-                                                break 'recv_loop State::FatalError(attempt);
+                                                break 'recv_loop State::FatalError(attempt, FatalErrorReason::DownstreamChannelClosed);
                                             }
                                         }
 
                                     }
                                     Err(SendTimeoutError::Closed(_)) => {
                                         warn!("downstream receiver closed - aborting");
-                                        break 'recv_loop State::FatalError(attempt);
+                                        break 'recv_loop State::FatalError(attempt, FatalErrorReason::DownstreamChannelClosed);
                                     }
                                 }
                                 // {

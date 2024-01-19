@@ -73,6 +73,7 @@ impl FromYellowstoneExtractor for BlockMiniExtractor {
 enum TestCases {
     Basic,
     SlowReceiver,
+    CloseAfterReceiving,
 }
 
 
@@ -82,7 +83,7 @@ pub async fn main() {
     tracing_subscriber::fmt::init();
     // console_subscriber::init();
 
-    let test_case = TestCases::SlowReceiver;
+    let test_case = TestCases::CloseAfterReceiving;
 
     let grpc_addr_green = env::var("GRPC_ADDR").expect("need grpc url for green");
     let grpc_x_token_green = env::var("GRPC_X_TOKEN").ok();
@@ -116,10 +117,18 @@ pub async fn main() {
         }
 
         while let Some(message) = green_stream.recv().await {
+
+
+
             match message {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
                     // info!("got update: {:?}", subscriber_update.update_oneof.);
                     info!("got update!!!");
+
+                    if let TestCases::CloseAfterReceiving = test_case {
+                        info!("(testcase) closing stream after receiving");
+                        return;
+                    }
                 }
                 Message::Connecting(attempt) => {
                     warn!("Connection attempt: {}", attempt);
