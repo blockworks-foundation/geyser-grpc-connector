@@ -295,21 +295,6 @@ pub fn create_geyser_autoconnection_task(
                                         );
                                     }
                                 }
-                                // {
-                                //     Ok(n_subscribers) => {
-                                //         trace!(
-                                //             "sent update message to {} subscribers (buffer={})",
-                                //             n_subscribers,
-                                //             sender.len()
-                                //         );
-                                //         continue 'recv_loop;
-                                //     }
-                                //     Err(SendError(_)) => {
-                                //         // note: error does not mean that future sends will also fail!
-                                //         trace!("no subscribers for update message");
-                                //         continue 'recv_loop;
-                                //     }
-                                // };
                             }
                             Some(Err(tonic_status)) => {
                                 // all tonic errors are recoverable
