@@ -4,13 +4,26 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc::error::SendTimeoutError;
 use tokio::time::{sleep, timeout};
 
+/// usage: see plug_pattern test
+pub fn spawn_broadcast_channel_plug<T: Send + 'static>(
+    downstream_broadcast: (
+        tokio::sync::broadcast::Sender<T>,
+        tokio::sync::broadcast::Receiver<T>,
+    ),
+    upstream: tokio::sync::mpsc::Receiver<T>,
+) -> tokio::sync::broadcast::Receiver<T> {
+    spawn_plugger_mpcs_to_broadcast(upstream, downstream_broadcast.0);
+    downstream_broadcast.1
+}
 
+/// note: backpressure will NOT get propagated to upstream
 pub fn spawn_plugger_mpcs_to_broadcast<T: Send + 'static>(
     mut upstream: tokio::sync::mpsc::Receiver<T>,
     downstream: tokio::sync::broadcast::Sender<T>,
+    // TODO allow multiple downstreams + fanout
 ) {
     // abort forwarder by closing the sender
-    let _donothing = tokio::spawn(async move {
+    let _private_handler = tokio::spawn(async move {
         while let Some(value) = upstream.recv().await {
             match downstream.send(value) {
                 Ok(n_subscribers) => {
@@ -26,10 +39,16 @@ pub fn spawn_plugger_mpcs_to_broadcast<T: Send + 'static>(
     });
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn plug_pattern() {
+        let (jh_task, message_channel) = tokio::sync::mpsc::channel::<u32>(1);
+        let broadcast_rx =
+            spawn_broadcast_channel_plug(tokio::sync::broadcast::channel(8), message_channel);
+    }
 
     #[tokio::test]
     async fn connect_broadcast_to_mpsc() {
