@@ -2,10 +2,7 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::time::Duration;
-use yellowstone_grpc_proto::geyser::{
-    CommitmentLevel, SubscribeRequest, SubscribeRequestFilterBlocks,
-    SubscribeRequestFilterBlocksMeta,
-};
+use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeRequestFilterBlocksMeta, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 
 pub mod channel_plugger;
@@ -14,6 +11,17 @@ pub mod grpc_subscription_autoreconnect_streams;
 pub mod grpc_subscription_autoreconnect_tasks;
 pub mod grpcmultiplex_fastestwins;
 mod obfuscate;
+
+type Attempt = u32;
+
+// wraps payload and status messages
+// clone is required by broacast channel
+#[derive(Clone)]
+pub enum Message {
+    GeyserSubscribeUpdate(Box<SubscribeUpdate>),
+    // connect (attempt=1) or reconnect(attempt=2..)
+    Connecting(Attempt),
+}
 
 #[derive(Clone, Debug)]
 pub struct GrpcConnectionTimeouts {
@@ -24,8 +32,8 @@ pub struct GrpcConnectionTimeouts {
 
 #[derive(Clone)]
 pub struct GrpcSourceConfig {
-    grpc_addr: String,
-    grpc_x_token: Option<String>,
+    pub grpc_addr: String,
+    pub grpc_x_token: Option<String>,
     tls_config: Option<ClientTlsConfig>,
     timeouts: Option<GrpcConnectionTimeouts>,
 }

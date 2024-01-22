@@ -1,4 +1,4 @@
-use crate::GrpcSourceConfig;
+use crate::{GrpcSourceConfig, Message};
 use anyhow::bail;
 use futures::{Stream, StreamExt};
 use log::{debug, error, info, log, trace, warn, Level};
@@ -27,15 +27,6 @@ use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 use yellowstone_grpc_proto::tonic::{Code, Status};
 
 type Attempt = u32;
-
-// wraps payload and status messages
-// clone is required by broacast channel
-#[derive(Clone)]
-pub enum Message {
-    GeyserSubscribeUpdate(Box<SubscribeUpdate>),
-    // connect (attempt=1) or reconnect(attempt=2..)
-    Connecting(Attempt),
-}
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
     NotConnected(Attempt),
@@ -76,7 +67,7 @@ pub fn create_geyser_autoconnection_task(
     subscribe_filter: SubscribeRequest,
 ) -> (AbortHandle, Receiver<Message>) {
     // read this for argument: http://www.randomhacks.net/2019/03/08/should-rust-channels-panic-on-send/
-    let (sender, receiver_stream) = tokio::sync::mpsc::channel::<Message>(1);
+    let (sender, receiver_channel) = tokio::sync::mpsc::channel::<Message>(1);
 
     let jh_geyser_task = tokio::spawn(async move {
         let mut state = State::NotConnected(0);
@@ -312,7 +303,7 @@ pub fn create_geyser_autoconnection_task(
         }
     });
 
-    (jh_geyser_task.abort_handle(), receiver_stream)
+    (jh_geyser_task.abort_handle(), receiver_channel)
 }
 
 #[cfg(test)]

@@ -1,11 +1,11 @@
-use crate::grpc_subscription_autoreconnect_streams::Message;
-use crate::grpc_subscription_autoreconnect_streams::Message::GeyserSubscribeUpdate;
+use crate::Message;
 use async_stream::stream;
 use futures::{Stream, StreamExt};
 use log::{info, warn};
 use merge_streams::MergeStreams;
 use solana_sdk::clock::Slot;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
+use crate::Message::GeyserSubscribeUpdate;
 
 pub trait FromYellowstoneExtractor {
     // Target is something like ProducedBlock

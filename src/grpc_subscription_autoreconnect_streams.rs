@@ -1,4 +1,4 @@
-use crate::GrpcSourceConfig;
+use crate::{Attempt, GrpcSourceConfig, Message};
 use async_stream::stream;
 use futures::channel::mpsc;
 use futures::{Stream, StreamExt};
@@ -25,17 +25,6 @@ use yellowstone_grpc_proto::tonic::metadata::errors::InvalidMetadataValue;
 use yellowstone_grpc_proto::tonic::service::Interceptor;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 use yellowstone_grpc_proto::tonic::{Code, Status};
-
-type Attempt = u32;
-
-// wraps payload and status messages
-// clone is required by broacast channel
-#[derive(Clone)]
-pub enum Message {
-    GeyserSubscribeUpdate(Box<SubscribeUpdate>),
-    // connect (attempt=1) or reconnect(attempt=2..)
-    Connecting(Attempt),
-}
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
     NotConnected(Attempt),
