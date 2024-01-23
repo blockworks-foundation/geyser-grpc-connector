@@ -2,7 +2,7 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::time::Duration;
-use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeRequestFilterBlocksMeta, SubscribeUpdate};
+use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeRequestFilterBlocksMeta, SubscribeRequestFilterSlots, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 
 pub mod channel_plugger;
@@ -119,6 +119,26 @@ impl GeyserFilter {
             entry: Default::default(),
             blocks: HashMap::new(),
             blocks_meta: blocksmeta_subs,
+            commitment: Some(map_commitment_level(self.0) as i32),
+            accounts_data_slice: Default::default(),
+            ping: None,
+        }
+    }
+
+    pub fn slots(&self) -> SubscribeRequest {
+        let mut slots_subs = HashMap::new();
+        slots_subs.insert("client".to_string(),
+          SubscribeRequestFilterSlots {
+            filter_by_commitment: Some(true),
+        });
+
+        SubscribeRequest {
+            slots: slots_subs,
+            accounts: Default::default(),
+            transactions: HashMap::new(),
+            entry: Default::default(),
+            blocks: HashMap::new(),
+            blocks_meta: HashMap::new(),
             commitment: Some(map_commitment_level(self.0) as i32),
             accounts_data_slice: Default::default(),
             ping: None,
