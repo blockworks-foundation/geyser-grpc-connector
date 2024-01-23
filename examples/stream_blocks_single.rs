@@ -6,12 +6,12 @@ use std::env;
 use std::pin::pin;
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::{
-    create_geyser_reconnecting_stream, Message,
+    create_geyser_reconnecting_stream,
 };
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
 };
-use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
+use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
 use tokio::time::{sleep, Duration};
 use tracing::warn;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
@@ -90,14 +90,19 @@ pub async fn main() {
         subscribe_timeout: Duration::from_secs(5),
     };
 
-    let green_config =
+    let config =
         GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());
 
     info!("Write Block stream..");
 
     let green_stream = create_geyser_reconnecting_stream(
-        green_config.clone(),
-        GeyserFilter(CommitmentConfig::confirmed()).blocks_and_txs(),
+        config.clone(),
+        GeyserFilter(CommitmentConfig::finalized()).blocks_and_txs(),
+    );
+
+    let blue_stream = create_geyser_reconnecting_stream(
+        config.clone(),
+        GeyserFilter(CommitmentConfig::processed()).blocks_and_txs(),
     );
 
     tokio::spawn(async move {
@@ -105,8 +110,28 @@ pub async fn main() {
         while let Some(message) = green_stream.next().await {
             match message {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
-                    // info!("got update: {:?}", subscriber_update.update_oneof.);
-                    info!("got update!!!");
+                    let mapped = map_block_update(*subscriber_update);
+                    if let Some(slot) = mapped {
+                        info!("got update (green)!!! slot: {}", slot);
+                    }
+                }
+                Message::Connecting(attempt) => {
+                    warn!("Connection attempt: {}", attempt);
+                }
+            }
+        }
+        warn!("Stream aborted");
+    });
+
+    tokio::spawn(async move {
+        let mut blue_stream = pin!(blue_stream);
+        while let Some(message) = blue_stream.next().await {
+            match message {
+                Message::GeyserSubscribeUpdate(subscriber_update) => {
+                    let mapped = map_block_update(*subscriber_update);
+                    if let Some(slot) = mapped {
+                        info!("got update (blue)!!! slot: {}", slot);
+                    }
                 }
                 Message::Connecting(attempt) => {
                     warn!("Connection attempt: {}", attempt);
@@ -129,4 +154,15 @@ pub async fn main() {
 
     // "infinite" sleep
     sleep(Duration::from_secs(1800)).await;
+}
+
+
+fn map_block_update(update: SubscribeUpdate) -> Option<Slot> {
+    match update.update_oneof {
+        Some(UpdateOneof::Block(update_block_message)) => {
+            let slot = update_block_message.slot;
+            Some(slot)
+        }
+        _ => None,
+    }
 }

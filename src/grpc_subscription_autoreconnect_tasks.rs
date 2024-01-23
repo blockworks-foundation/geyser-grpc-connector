@@ -154,11 +154,11 @@ pub fn create_geyser_autoconnection_task(
                             match subscribe_result {
                                 Ok(geyser_stream) => State::Ready(attempt, geyser_stream),
                                 Err(GeyserGrpcClientError::TonicError(_)) => {
-                                    warn!("! subscribe failed on {} - retrying", grpc_source);
+                                    warn!("subscribe failed on {} - retrying", grpc_source);
                                     State::RecoverableConnectionError(attempt)
                                 }
                                 Err(GeyserGrpcClientError::TonicStatus(_)) => {
-                                    warn!("! subscribe failed on {} - retrying", grpc_source);
+                                    warn!("subscribe failed on {} - retrying", grpc_source);
                                     State::RecoverableConnectionError(attempt)
                                 }
                                 // non-recoverable
@@ -191,23 +191,23 @@ pub fn create_geyser_autoconnection_task(
                 }
                 State::FatalError(_attempt, reason) => match reason {
                     FatalErrorReason::DownstreamChannelClosed => {
-                        warn!("! downstream closed - aborting");
+                        warn!("downstream closed - aborting");
                         return;
                     }
                     FatalErrorReason::ConfigurationError => {
-                        warn!("! fatal configuration error - aborting");
+                        warn!("fatal configuration error - aborting");
                         return;
                     }
                     FatalErrorReason::NetworkError => {
-                        warn!("! fatal network error - aborting");
+                        warn!("fatal network error - aborting");
                         return;
                     }
                     FatalErrorReason::SubscribeError => {
-                        warn!("! fatal grpc subscribe error - aborting");
+                        warn!("fatal grpc subscribe error - aborting");
                         return;
                     }
                     FatalErrorReason::Misc => {
-                        error!("! fatal misc error grpc connection - aborting");
+                        error!("fatal misc error grpc connection - aborting");
                         return;
                     }
                 },
@@ -289,7 +289,7 @@ pub fn create_geyser_autoconnection_task(
                             }
                             Some(Err(tonic_status)) => {
                                 // all tonic errors are recoverable
-                                warn!("! error on {} - retrying: {:?}", grpc_source, tonic_status);
+                                warn!("error on {} - retrying: {:?}", grpc_source, tonic_status);
                                 break 'recv_loop State::WaitReconnect(attempt);
                             }
                             None => {

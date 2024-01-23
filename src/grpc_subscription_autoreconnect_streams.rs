@@ -94,11 +94,11 @@ pub fn create_geyser_reconnecting_stream(
                         Ok(Ok(subscribed_stream)) => (ConnectionState::Ready(attempt, subscribed_stream), Message::Connecting(attempt)),
                         Ok(Err(geyser_error)) => {
                              // ATM we consider all errors recoverable
-                            warn!("! subscribe failed on {} - retrying: {:?}", grpc_source, geyser_error);
+                            warn!("subscribe failed on {} - retrying: {:?}", grpc_source, geyser_error);
                             (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         },
                         Err(geyser_grpc_task_error) => {
-                            panic!("! task aborted - should not happen :{geyser_grpc_task_error}");
+                            panic!("task aborted - should not happen :{geyser_grpc_task_error}");
                         }
                     }
 
@@ -113,7 +113,7 @@ pub fn create_geyser_reconnecting_stream(
                         }
                         Some(Err(tonic_status)) => {
                             // ATM we consider all errors recoverable
-                            warn!("! error on {} - retrying: {:?}", grpc_source, tonic_status);
+                            warn!("error on {} - retrying: {:?}", grpc_source, tonic_status);
                             (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
                         }
                         None =>  {
@@ -127,7 +127,7 @@ pub fn create_geyser_reconnecting_stream(
 
                 ConnectionState::WaitReconnect(attempt) => {
                     let backoff_secs = 1.5_f32.powi(attempt as i32).min(15.0);
-                    info!("! waiting {} seconds, then reconnect to {}", backoff_secs, grpc_source);
+                    info!("waiting {} seconds, then reconnect to {}", backoff_secs, grpc_source);
                     sleep(Duration::from_secs_f32(backoff_secs)).await;
                     (ConnectionState::NotConnected(attempt), Message::Connecting(attempt))
                 }

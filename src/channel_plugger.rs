@@ -3,6 +3,7 @@ use std::time::Duration;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc::error::SendTimeoutError;
 use tokio::time::{sleep, timeout};
+use crate::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 
 /// usage: see plug_pattern test
 pub fn spawn_broadcast_channel_plug<T: Send + 'static>(
