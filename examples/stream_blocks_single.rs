@@ -5,9 +5,7 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
 use std::pin::pin;
 
-use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::{
-    create_geyser_reconnecting_stream,
-};
+use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
 };
@@ -88,10 +86,10 @@ pub async fn main() {
         connect_timeout: Duration::from_secs(5),
         request_timeout: Duration::from_secs(5),
         subscribe_timeout: Duration::from_secs(5),
+        receive_timeout: Duration::from_secs(5),
     };
 
-    let config =
-        GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());
+    let config = GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());
 
     info!("Write Block stream..");
 
@@ -155,7 +153,6 @@ pub async fn main() {
     // "infinite" sleep
     sleep(Duration::from_secs(1800)).await;
 }
-
 
 fn map_block_update(update: SubscribeUpdate) -> Option<Slot> {
     match update.update_oneof {

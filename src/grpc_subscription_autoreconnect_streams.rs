@@ -1,14 +1,12 @@
 use crate::{Attempt, GrpcSourceConfig, Message};
 use async_stream::stream;
 use futures::{Stream, StreamExt};
-use log::{debug, error, info, log, trace, warn, Level};
-use std::fmt::{Debug, Display};
+use log::{debug, info, log, trace, warn, Level};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
-use yellowstone_grpc_proto::tonic::service::Interceptor;
 use yellowstone_grpc_proto::tonic::Status;
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
@@ -143,6 +141,7 @@ mod tests {
             connect_timeout: Duration::from_secs(1),
             request_timeout: Duration::from_secs(2),
             subscribe_timeout: Duration::from_secs(3),
+            receive_timeout: Duration::from_secs(3),
         };
         assert_eq!(
             format!(
@@ -164,6 +163,7 @@ mod tests {
             connect_timeout: Duration::from_secs(1),
             request_timeout: Duration::from_secs(2),
             subscribe_timeout: Duration::from_secs(3),
+            receive_timeout: Duration::from_secs(3),
         };
         assert_eq!(
             format!(

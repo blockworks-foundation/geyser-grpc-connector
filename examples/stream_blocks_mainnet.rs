@@ -129,6 +129,7 @@ pub async fn main() {
         connect_timeout: Duration::from_secs(5),
         request_timeout: Duration::from_secs(5),
         subscribe_timeout: Duration::from_secs(5),
+        receive_timeout: Duration::from_secs(5),
     };
 
     let green_config =

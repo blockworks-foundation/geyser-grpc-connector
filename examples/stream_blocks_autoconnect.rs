@@ -5,36 +5,15 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
 use std::pin::pin;
 
-use geyser_grpc_connector::channel_plugger::{
-    spawn_broadcast_channel_plug, spawn_plugger_mpcs_to_broadcast,
-};
-use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
-use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::{
-    create_geyser_autoconnection_task,
-};
-use geyser_grpc_connector::grpcmultiplex_fastestwins::{
-    create_multiplexed_stream, FromYellowstoneExtractor,
-};
+use geyser_grpc_connector::channel_plugger::spawn_broadcast_channel_plug;
+use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task;
+use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
 use tokio::time::{sleep, Duration};
 use tracing::warn;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 use yellowstone_grpc_proto::prost::Message as _;
-
-fn start_example_blockmini_consumer(
-    multiplex_stream: impl Stream<Item = BlockMini> + Send + 'static,
-) {
-    tokio::spawn(async move {
-        let mut blockmeta_stream = pin!(multiplex_stream);
-        while let Some(mini) = blockmeta_stream.next().await {
-            info!(
-                "emitted block mini #{}@{} with {} bytes from multiplexer",
-                mini.slot, mini.commitment_config.commitment, mini.blocksize
-            );
-        }
-    });
-}
 
 pub struct BlockMini {
     pub blocksize: usize,
@@ -73,7 +52,7 @@ impl FromYellowstoneExtractor for BlockMiniExtractor {
     }
 }
 
-#[warn(dead_code)]
+#[allow(dead_code)]
 enum TestCases {
     Basic,
     SlowReceiverStartup,
@@ -102,6 +81,7 @@ pub async fn main() {
         connect_timeout: Duration::from_secs(5),
         request_timeout: Duration::from_secs(5),
         subscribe_timeout: Duration::from_secs(5),
+        receive_timeout: Duration::from_secs(5),
     };
 
     let green_config =

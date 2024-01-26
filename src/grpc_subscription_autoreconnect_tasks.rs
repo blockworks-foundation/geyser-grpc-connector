@@ -1,14 +1,11 @@
 use crate::{GrpcSourceConfig, Message};
 use futures::{Stream, StreamExt};
 use log::{debug, error, info, log, trace, warn, Level};
-use std::fmt::{Debug, Display};
-use std::future::Future;
 use std::time::Duration;
 use tokio::sync::mpsc::error::SendTimeoutError;
 use tokio::sync::mpsc::Receiver;
 use tokio::task::AbortHandle;
 use tokio::time::{sleep, timeout, Instant};
-use tokio::time::error::Elapsed;
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientError};
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::service::Interceptor;
@@ -214,7 +211,12 @@ pub fn create_geyser_autoconnection_task(
                 ConnectionState::Ready(attempt, mut geyser_stream) => {
                     let receive_timeout = grpc_source.timeouts.as_ref().map(|t| t.receive_timeout);
                     'recv_loop: loop {
-                        match timeout(receive_timeout.unwrap_or(Duration::MAX), geyser_stream.next()).await {
+                        match timeout(
+                            receive_timeout.unwrap_or(Duration::MAX),
+                            geyser_stream.next(),
+                        )
+                        .await
+                        {
                             Ok(Some(Ok(update_message))) => {
                                 trace!("> recv update message from {}", grpc_source);
                                 // note: first send never blocks as the mpsc channel has capacity 1
@@ -309,6 +311,7 @@ mod tests {
             connect_timeout: Duration::from_secs(1),
             request_timeout: Duration::from_secs(2),
             subscribe_timeout: Duration::from_secs(3),
+            receive_timeout: Duration::from_secs(3),
         };
         assert_eq!(
             format!(
@@ -330,6 +333,7 @@ mod tests {
             connect_timeout: Duration::from_secs(1),
             request_timeout: Duration::from_secs(2),
             subscribe_timeout: Duration::from_secs(3),
+            receive_timeout: Duration::from_secs(3),
         };
         assert_eq!(
             format!(
