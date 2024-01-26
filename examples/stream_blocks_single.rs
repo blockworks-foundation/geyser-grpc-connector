@@ -6,9 +6,7 @@ use std::env;
 use std::pin::pin;
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
-use geyser_grpc_connector::grpcmultiplex_fastestwins::{
-    create_multiplexed_stream, FromYellowstoneExtractor,
-};
+use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
 use tokio::time::{sleep, Duration};
 use tracing::warn;
