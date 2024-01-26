@@ -291,10 +291,10 @@ pub fn create_geyser_autoconnection_task(
                                 break 'recv_loop ConnectionState::WaitReconnect(attempt);
                             }
                         }
-                    } // -- end loop
+                    } // -- END receive loop
                 }
-            }
-        }
+            } // -- END match
+        } // -- endless state loop
     });
 
     (jh_geyser_task.abort_handle(), receiver_channel)
