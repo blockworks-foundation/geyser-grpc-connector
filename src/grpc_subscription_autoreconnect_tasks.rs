@@ -29,8 +29,6 @@ enum FatalErrorReason {
     ConfigurationError,
     NetworkError,
     SubscribeError,
-    // everything else
-    Misc,
 }
 
 /// connect to grpc source performing autoconect if required,
@@ -101,21 +99,21 @@ pub fn create_geyser_autoconnection_task(
                         }
                         Err(GeyserGrpcClientError::TonicError(tonic_error)) => {
                             warn!(
-                                "! connect failed on {} - aborting: {:?}",
+                                "connect failed on {} - aborting: {:?}",
                                 grpc_source, tonic_error
                             );
                             ConnectionState::FatalError(attempt, FatalErrorReason::NetworkError)
                         }
                         Err(GeyserGrpcClientError::TonicStatus(tonic_status)) => {
                             warn!(
-                                "! connect failed on {} - retrying: {:?}",
+                                "connect failed on {} - retrying: {:?}",
                                 grpc_source, tonic_status
                             );
                             ConnectionState::RecoverableConnectionError(attempt)
                         }
                         Err(GeyserGrpcClientError::SubscribeSendError(send_error)) => {
                             warn!(
-                                "! connect failed with send error on {} - retrying: {:?}",
+                                "connect failed with send error on {} - retrying: {:?}",
                                 grpc_source, send_error
                             );
                             ConnectionState::RecoverableConnectionError(attempt)
@@ -149,7 +147,7 @@ pub fn create_geyser_autoconnection_task(
                                 // non-recoverable
                                 Err(unrecoverable_error) => {
                                     error!(
-                                        "! subscribe to {} failed with unrecoverable error: {}",
+                                        "subscribe to {} failed with unrecoverable error: {}",
                                         grpc_source, unrecoverable_error
                                     );
                                     ConnectionState::FatalError(
@@ -161,7 +159,7 @@ pub fn create_geyser_autoconnection_task(
                         }
                         Err(_elapsed) => {
                             warn!(
-                                "! subscribe failed with timeout on {} - retrying",
+                                "subscribe failed with timeout on {} - retrying",
                                 grpc_source
                             );
                             ConnectionState::RecoverableConnectionError(attempt)
@@ -171,7 +169,7 @@ pub fn create_geyser_autoconnection_task(
                 ConnectionState::RecoverableConnectionError(attempt) => {
                     let backoff_secs = 1.5_f32.powi(attempt as i32).min(15.0);
                     info!(
-                        "! waiting {} seconds, then reconnect to {}",
+                        "waiting {} seconds, then reconnect to {}",
                         backoff_secs, grpc_source
                     );
                     sleep(Duration::from_secs_f32(backoff_secs)).await;
@@ -194,15 +192,11 @@ pub fn create_geyser_autoconnection_task(
                         warn!("fatal grpc subscribe error - aborting");
                         return;
                     }
-                    FatalErrorReason::Misc => {
-                        error!("fatal misc error grpc connection - aborting");
-                        return;
-                    }
                 },
                 ConnectionState::WaitReconnect(attempt) => {
                     let backoff_secs = 1.5_f32.powi(attempt as i32).min(15.0);
                     info!(
-                        "! waiting {} seconds, then reconnect to {}",
+                        "waiting {} seconds, then reconnect to {}",
                         backoff_secs, grpc_source
                     );
                     sleep(Duration::from_secs_f32(backoff_secs)).await;
