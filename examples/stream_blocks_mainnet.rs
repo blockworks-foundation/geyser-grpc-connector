@@ -21,12 +21,11 @@ use solana_sdk::signature::Signature;
 use solana_sdk::transaction::TransactionError;
 use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
 
-use geyser_grpc_connector::grpc_subscription_autoreconnect::{
-    create_geyser_reconnecting_stream, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig,
-};
+use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
 };
+use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
@@ -130,6 +129,7 @@ pub async fn main() {
         connect_timeout: Duration::from_secs(5),
         request_timeout: Duration::from_secs(5),
         subscribe_timeout: Duration::from_secs(5),
+        receive_timeout: Duration::from_secs(5),
     };
 
     let green_config =

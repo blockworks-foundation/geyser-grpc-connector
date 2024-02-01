@@ -1,11 +1,11 @@
-use futures::{Stream, StreamExt};
+use futures::StreamExt;
 use log::info;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
-use std::pin::pin;
 
-use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
+use geyser_grpc_connector::channel_plugger::spawn_broadcast_channel_plug;
+use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
 use tokio::time::{sleep, Duration};
@@ -13,20 +13,6 @@ use tracing::warn;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 use yellowstone_grpc_proto::prost::Message as _;
-
-fn start_example_blockmini_consumer(
-    multiplex_stream: impl Stream<Item = BlockMini> + Send + 'static,
-) {
-    tokio::spawn(async move {
-        let mut blockmeta_stream = pin!(multiplex_stream);
-        while let Some(mini) = blockmeta_stream.next().await {
-            info!(
-                "emitted block mini #{}@{} with {} bytes from multiplexer",
-                mini.slot, mini.commitment_config.commitment, mini.blocksize
-            );
-        }
-    });
-}
 
 pub struct BlockMini {
     pub blocksize: usize,
@@ -65,6 +51,16 @@ impl FromYellowstoneExtractor for BlockMiniExtractor {
     }
 }
 
+#[allow(dead_code)]
+enum TestCases {
+    Basic,
+    SlowReceiverStartup,
+    TemporaryLaggingReceiver,
+    CloseAfterReceiving,
+    AbortTaskFromOutside,
+}
+const TEST_CASE: TestCases = TestCases::Basic;
+
 #[tokio::main]
 pub async fn main() {
     // RUST_LOG=info,stream_blocks_mainnet=debug,geyser_grpc_connector=trace
@@ -87,50 +83,50 @@ pub async fn main() {
         receive_timeout: Duration::from_secs(5),
     };
 
-    let config = GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());
+    let green_config =
+        GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());
 
     info!("Write Block stream..");
 
-    let green_stream = create_geyser_reconnecting_stream(
-        config.clone(),
-        GeyserFilter(CommitmentConfig::finalized()).blocks_and_txs(),
+    let (jh_geyser_task, message_channel) = create_geyser_autoconnection_task(
+        green_config.clone(),
+        GeyserFilter(CommitmentConfig::confirmed()).blocks_and_txs(),
     );
-
-    let blue_stream = create_geyser_reconnecting_stream(
-        config.clone(),
-        GeyserFilter(CommitmentConfig::processed()).blocks_and_txs(),
-    );
+    let mut message_channel =
+        spawn_broadcast_channel_plug(tokio::sync::broadcast::channel(8), message_channel);
 
     tokio::spawn(async move {
-        let mut green_stream = pin!(green_stream);
-        while let Some(message) = green_stream.next().await {
+        if let TestCases::SlowReceiverStartup = TEST_CASE {
+            sleep(Duration::from_secs(5)).await;
+        }
+
+        let mut message_count = 0;
+        while let Ok(message) = message_channel.recv().await {
+            if let TestCases::AbortTaskFromOutside = TEST_CASE {
+                if message_count > 5 {
+                    info!("(testcase) aborting task from outside");
+                    jh_geyser_task.abort();
+                }
+            }
             match message {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
-                    let mapped = map_block_update(*subscriber_update);
-                    if let Some(slot) = mapped {
-                        info!("got update (green)!!! slot: {}", slot);
+                    message_count += 1;
+                    info!("got update - {} bytes", subscriber_update.encoded_len());
+
+                    if let TestCases::CloseAfterReceiving = TEST_CASE {
+                        info!("(testcase) closing stream after receiving");
+                        return;
                     }
                 }
                 Message::Connecting(attempt) => {
                     warn!("Connection attempt: {}", attempt);
                 }
             }
-        }
-        warn!("Stream aborted");
-    });
 
-    tokio::spawn(async move {
-        let mut blue_stream = pin!(blue_stream);
-        while let Some(message) = blue_stream.next().await {
-            match message {
-                Message::GeyserSubscribeUpdate(subscriber_update) => {
-                    let mapped = map_block_update(*subscriber_update);
-                    if let Some(slot) = mapped {
-                        info!("got update (blue)!!! slot: {}", slot);
-                    }
-                }
-                Message::Connecting(attempt) => {
-                    warn!("Connection attempt: {}", attempt);
+            if let TestCases::TemporaryLaggingReceiver = TEST_CASE {
+                if message_count % 3 == 1 {
+                    info!("(testcase) lagging a bit");
+                    sleep(Duration::from_millis(1500)).await;
                 }
             }
         }
@@ -138,15 +134,5 @@ pub async fn main() {
     });
 
     // "infinite" sleep
-    sleep(Duration::from_secs(1800)).await;
-}
-
-fn map_block_update(update: SubscribeUpdate) -> Option<Slot> {
-    match update.update_oneof {
-        Some(UpdateOneof::Block(update_block_message)) => {
-            let slot = update_block_message.slot;
-            Some(slot)
-        }
-        _ => None,
-    }
+    sleep(Duration::from_secs(2000)).await;
 }
