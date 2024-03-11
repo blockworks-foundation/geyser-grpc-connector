@@ -14,6 +14,7 @@ pub mod grpc_subscription_autoreconnect_tasks;
 pub mod grpcmultiplex_fastestwins;
 mod obfuscate;
 
+// 1-based attempt counter
 type Attempt = u32;
 
 // wraps payload and status messages
