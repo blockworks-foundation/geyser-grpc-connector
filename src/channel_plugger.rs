@@ -1,7 +1,4 @@
-use log::{debug, info, warn};
-use std::time::Duration;
-use tokio::sync::broadcast::error::RecvError;
-use tokio::sync::mpsc::error::SendTimeoutError;
+use log::debug;
 
 /// usage: see plug_pattern test
 pub fn spawn_broadcast_channel_plug<T: Send + 'static>(
@@ -41,6 +38,10 @@ pub fn spawn_plugger_mpcs_to_broadcast<T: Send + 'static>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use log::{info, warn};
+    use std::time::Duration;
+    use tokio::sync::broadcast::error::RecvError;
+    use tokio::sync::mpsc::error::SendTimeoutError;
     use tokio::time::{sleep, timeout};
 
     #[tokio::test]

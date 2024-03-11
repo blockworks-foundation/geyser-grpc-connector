@@ -1,4 +1,4 @@
-use futures::{Stream, StreamExt};
+use futures::Stream;
 use log::{info, warn};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -32,20 +32,6 @@ use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConf
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
-
-fn start_example_block_consumer(
-    multiplex_stream: impl Stream<Item = ProducedBlock> + Send + 'static,
-) {
-    tokio::spawn(async move {
-        let mut block_stream = pin!(multiplex_stream);
-        while let Some(block) = block_stream.next().await {
-            info!(
-                "emitted block #{}@{} from multiplexer",
-                block.slot, block.commitment_config.commitment
-            );
-        }
-    });
-}
 
 fn start_example_blockmeta_consumer(mut multiplex_channel: Receiver<Message>) {
     tokio::spawn(async move {
@@ -113,9 +99,6 @@ pub async fn main() {
     tracing_subscriber::fmt::init();
     // console_subscriber::init();
 
-    let subscribe_blocks = true;
-    let subscribe_blockmeta = false;
-
     let grpc_addr_green = env::var("GRPC_ADDR").expect("need grpc url for green");
     let grpc_x_token_green = env::var("GRPC_X_TOKEN").ok();
     let grpc_addr_blue = env::var("GRPC_ADDR2").expect("need grpc url for blue");
@@ -148,19 +131,19 @@ pub async fn main() {
         GrpcSourceConfig::new(grpc_addr_blue, grpc_x_token_blue, None, timeouts.clone());
     let toxiproxy_config = GrpcSourceConfig::new(grpc_addr_toxiproxy, None, None, timeouts.clone());
 
-    let (autoconnect_tx, mut blockmeta_rx) = tokio::sync::mpsc::channel(10);
+    let (autoconnect_tx, blockmeta_rx) = tokio::sync::mpsc::channel(10);
     info!("Write BlockMeta stream..");
-    let green_stream_ah = create_geyser_autoconnection_task_with_mpsc(
+    let _green_stream_ah = create_geyser_autoconnection_task_with_mpsc(
         green_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
         autoconnect_tx.clone(),
     );
-    let blue_stream_ah = create_geyser_autoconnection_task_with_mpsc(
+    let _blue_stream_ah = create_geyser_autoconnection_task_with_mpsc(
         blue_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
         autoconnect_tx.clone(),
     );
-    let toxiproxy_stream_ah = create_geyser_autoconnection_task_with_mpsc(
+    let _toxiproxy_stream_ah = create_geyser_autoconnection_task_with_mpsc(
         toxiproxy_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
         autoconnect_tx.clone(),

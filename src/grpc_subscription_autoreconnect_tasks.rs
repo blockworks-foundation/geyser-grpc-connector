@@ -143,16 +143,25 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                             match subscribe_result {
                                 Ok(geyser_stream) => {
                                     if attempt > 1 {
-                                        debug!("subscribed to {} after {} failed attempts", grpc_source, attempt);
+                                        debug!(
+                                            "subscribed to {} after {} failed attempts",
+                                            grpc_source, attempt
+                                        );
                                     }
                                     ConnectionState::Ready(geyser_stream)
-                                },
+                                }
                                 Err(GeyserGrpcClientError::TonicError(_)) => {
-                                    warn!("subscribe failed on {} after {} attempts - retrying", grpc_source, attempt);
+                                    warn!(
+                                        "subscribe failed on {} after {} attempts - retrying",
+                                        grpc_source, attempt
+                                    );
                                     ConnectionState::RecoverableConnectionError(attempt + 1)
                                 }
                                 Err(GeyserGrpcClientError::TonicStatus(_)) => {
-                                    warn!("subscribe failed on {} after {} attempts - retrying", grpc_source, attempt);
+                                    warn!(
+                                        "subscribe failed on {} after {} attempts - retrying",
+                                        grpc_source, attempt
+                                    );
                                     ConnectionState::RecoverableConnectionError(attempt + 1)
                                 }
                                 // non-recoverable
@@ -161,7 +170,10 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                         "subscribe to {} failed with unrecoverable error: {}",
                                         grpc_source, unrecoverable_error
                                     );
-                                    ConnectionState::FatalError(attempt + 1, FatalErrorReason::SubscribeError)
+                                    ConnectionState::FatalError(
+                                        attempt + 1,
+                                        FatalErrorReason::SubscribeError,
+                                    )
                                 }
                             }
                         }
