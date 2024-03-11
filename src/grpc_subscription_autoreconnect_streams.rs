@@ -12,7 +12,7 @@ use yellowstone_grpc_proto::tonic::Status;
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
     NotConnected(Attempt),
     Connecting(Attempt, JoinHandle<GeyserGrpcClientResult<S>>),
-    Ready(Attempt, S),
+    Ready(S),
     WaitReconnect(Attempt),
 }
 
@@ -22,7 +22,7 @@ pub fn create_geyser_reconnecting_stream(
     grpc_source: GrpcSourceConfig,
     subscribe_filter: SubscribeRequest,
 ) -> impl Stream<Item = Message> {
-    let mut state = ConnectionState::NotConnected(0);
+    let mut state = ConnectionState::NotConnected(1);
 
     // in case of cancellation, we restart from here:
     // thus we want to keep the progression in a state object outside the stream! makro
@@ -32,8 +32,7 @@ pub fn create_geyser_reconnecting_stream(
 
             (state, yield_value) = match state {
 
-                ConnectionState::NotConnected(mut attempt) => {
-                    attempt += 1;
+                ConnectionState::NotConnected(attempt) => {
 
                     let connection_task = tokio::spawn({
                         let addr = grpc_source.grpc_addr.clone();
@@ -67,18 +66,18 @@ pub fn create_geyser_reconnecting_stream(
                         }
                     });
 
-                    (ConnectionState::Connecting(attempt, connection_task), Message::Connecting(attempt))
+                    (ConnectionState::Connecting(attempt + 1, connection_task), Message::Connecting(attempt))
                 }
 
                 ConnectionState::Connecting(attempt, connection_task) => {
                     let subscribe_result = connection_task.await;
 
                      match subscribe_result {
-                        Ok(Ok(subscribed_stream)) => (ConnectionState::Ready(attempt, subscribed_stream), Message::Connecting(attempt)),
+                        Ok(Ok(subscribed_stream)) => (ConnectionState::Ready(subscribed_stream), Message::Connecting(attempt)),
                         Ok(Err(geyser_error)) => {
                              // ATM we consider all errors recoverable
                             warn!("subscribe failed on {} - retrying: {:?}", grpc_source, geyser_error);
-                            (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
+                            (ConnectionState::WaitReconnect(attempt + 1), Message::Connecting(attempt))
                         },
                         Err(geyser_grpc_task_error) => {
                             panic!("task aborted - should not happen :{geyser_grpc_task_error}");
@@ -87,27 +86,27 @@ pub fn create_geyser_reconnecting_stream(
 
                 }
 
-                ConnectionState::Ready(attempt, mut geyser_stream) => {
+                ConnectionState::Ready(mut geyser_stream) => {
                     let receive_timeout = grpc_source.timeouts.as_ref().map(|t| t.receive_timeout);
                     match timeout(receive_timeout.unwrap_or(Duration::MAX), geyser_stream.next()).await {
                         Ok(Some(Ok(update_message))) => {
                             trace!("> recv update message from {}", grpc_source);
-                            (ConnectionState::Ready(attempt, geyser_stream), Message::GeyserSubscribeUpdate(Box::new(update_message)))
+                            (ConnectionState::Ready(geyser_stream), Message::GeyserSubscribeUpdate(Box::new(update_message)))
                         }
                         Ok(Some(Err(tonic_status))) => {
                             // ATM we consider all errors recoverable
                             warn!("error on {} - retrying: {:?}", grpc_source, tonic_status);
-                            (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
+                            (ConnectionState::WaitReconnect(1), Message::Connecting(1))
                         }
                         Ok(None) =>  {
                             // should not arrive here, Mean the stream close.
                             warn!("geyser stream closed on {} - retrying", grpc_source);
-                            (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
+                            (ConnectionState::WaitReconnect(1), Message::Connecting(1))
                         }
                         Err(_elapsed) => {
                             // timeout
                             warn!("geyser stream timeout on {} - retrying", grpc_source);
-                            (ConnectionState::WaitReconnect(attempt), Message::Connecting(attempt))
+                            (ConnectionState::WaitReconnect(1), Message::Connecting(1))
                         }
                     }
 

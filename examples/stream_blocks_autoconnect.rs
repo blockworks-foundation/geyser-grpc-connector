@@ -1,4 +1,3 @@
-use futures::StreamExt;
 use log::info;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;

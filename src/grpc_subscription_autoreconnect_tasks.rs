@@ -1,4 +1,4 @@
-use crate::{GrpcSourceConfig, Message};
+use crate::{Attempt, GrpcSourceConfig, Message};
 use futures::{Stream, StreamExt};
 use log::{debug, error, info, log, trace, warn, Level};
 use std::time::Duration;
@@ -11,12 +11,11 @@ use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::service::Interceptor;
 use yellowstone_grpc_proto::tonic::Status;
 
-type Attempt = u32;
-
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>, F: Interceptor> {
     NotConnected(Attempt),
-    Connected(Attempt, GeyserGrpcClient<F>),
-    Ready(Attempt, S),
+    // connected but not subscribed
+    Connecting(Attempt, GeyserGrpcClient<F>),
+    Ready(S),
     // error states
     RecoverableConnectionError(Attempt),
     // non-recoverable error
@@ -37,7 +36,8 @@ pub fn create_geyser_autoconnection_task(
 ) -> (AbortHandle, Receiver<Message>) {
     let (sender, receiver_channel) = tokio::sync::mpsc::channel::<Message>(1);
 
-    let abort_handle = create_geyser_autoconnection_task_with_mpsc(grpc_source, subscribe_filter, sender);
+    let abort_handle =
+        create_geyser_autoconnection_task_with_mpsc(grpc_source, subscribe_filter, sender);
 
     (abort_handle, receiver_channel)
 }
@@ -54,14 +54,12 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
 
     // task will be aborted when downstream receiver gets dropped
     let jh_geyser_task = tokio::spawn(async move {
-        let mut state = ConnectionState::NotConnected(0);
+        let mut state = ConnectionState::NotConnected(1);
         let mut messages_forwarded = 0;
 
         loop {
             state = match state {
-                ConnectionState::NotConnected(mut attempt) => {
-                    attempt += 1;
-
+                ConnectionState::NotConnected(attempt) => {
                     let addr = grpc_source.grpc_addr.clone();
                     let token = grpc_source.grpc_x_token.clone();
                     let config = grpc_source.tls_config.clone();
@@ -73,7 +71,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         } else {
                             Level::Debug
                         },
-                        "Connecting attempt #{} to {}",
+                        "Connecting attempt {} to {}",
                         attempt,
                         addr
                     );
@@ -88,20 +86,20 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                     .await;
 
                     match connect_result {
-                        Ok(client) => ConnectionState::Connected(attempt, client),
+                        Ok(client) => ConnectionState::Connecting(attempt, client),
                         Err(GeyserGrpcClientError::InvalidUri(_)) => ConnectionState::FatalError(
-                            attempt,
+                            attempt + 1,
                             FatalErrorReason::ConfigurationError,
                         ),
                         Err(GeyserGrpcClientError::MetadataValueError(_)) => {
                             ConnectionState::FatalError(
-                                attempt,
+                                attempt + 1,
                                 FatalErrorReason::ConfigurationError,
                             )
                         }
                         Err(GeyserGrpcClientError::InvalidXTokenLength(_)) => {
                             ConnectionState::FatalError(
-                                attempt,
+                                attempt + 1,
                                 FatalErrorReason::ConfigurationError,
                             )
                         }
@@ -110,25 +108,25 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                 "connect failed on {} - aborting: {:?}",
                                 grpc_source, tonic_error
                             );
-                            ConnectionState::FatalError(attempt, FatalErrorReason::NetworkError)
+                            ConnectionState::FatalError(attempt + 1, FatalErrorReason::NetworkError)
                         }
                         Err(GeyserGrpcClientError::TonicStatus(tonic_status)) => {
                             warn!(
                                 "connect failed on {} - retrying: {:?}",
                                 grpc_source, tonic_status
                             );
-                            ConnectionState::RecoverableConnectionError(attempt)
+                            ConnectionState::RecoverableConnectionError(attempt + 1)
                         }
                         Err(GeyserGrpcClientError::SubscribeSendError(send_error)) => {
                             warn!(
                                 "connect failed with send error on {} - retrying: {:?}",
                                 grpc_source, send_error
                             );
-                            ConnectionState::RecoverableConnectionError(attempt)
+                            ConnectionState::RecoverableConnectionError(attempt + 1)
                         }
                     }
                 }
-                ConnectionState::Connected(attempt, mut client) => {
+                ConnectionState::Connecting(attempt, mut client) => {
                     let subscribe_timeout =
                         grpc_source.timeouts.as_ref().map(|t| t.subscribe_timeout);
                     let subscribe_filter = subscribe_filter.clone();
@@ -143,14 +141,28 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                     match subscribe_result_timeout {
                         Ok(subscribe_result) => {
                             match subscribe_result {
-                                Ok(geyser_stream) => ConnectionState::Ready(attempt, geyser_stream),
+                                Ok(geyser_stream) => {
+                                    if attempt > 1 {
+                                        debug!(
+                                            "subscribed to {} after {} failed attempts",
+                                            grpc_source, attempt
+                                        );
+                                    }
+                                    ConnectionState::Ready(geyser_stream)
+                                }
                                 Err(GeyserGrpcClientError::TonicError(_)) => {
-                                    warn!("subscribe failed on {} - retrying", grpc_source);
-                                    ConnectionState::RecoverableConnectionError(attempt)
+                                    warn!(
+                                        "subscribe failed on {} after {} attempts - retrying",
+                                        grpc_source, attempt
+                                    );
+                                    ConnectionState::RecoverableConnectionError(attempt + 1)
                                 }
                                 Err(GeyserGrpcClientError::TonicStatus(_)) => {
-                                    warn!("subscribe failed on {} - retrying", grpc_source);
-                                    ConnectionState::RecoverableConnectionError(attempt)
+                                    warn!(
+                                        "subscribe failed on {} after {} attempts - retrying",
+                                        grpc_source, attempt
+                                    );
+                                    ConnectionState::RecoverableConnectionError(attempt + 1)
                                 }
                                 // non-recoverable
                                 Err(unrecoverable_error) => {
@@ -159,7 +171,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                         grpc_source, unrecoverable_error
                                     );
                                     ConnectionState::FatalError(
-                                        attempt,
+                                        attempt + 1,
                                         FatalErrorReason::SubscribeError,
                                     )
                                 }
@@ -170,7 +182,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                 "subscribe failed with timeout on {} - retrying",
                                 grpc_source
                             );
-                            ConnectionState::RecoverableConnectionError(attempt)
+                            ConnectionState::RecoverableConnectionError(attempt + 1)
                         }
                     }
                 }
@@ -210,7 +222,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                     sleep(Duration::from_secs_f32(backoff_secs)).await;
                     ConnectionState::NotConnected(attempt)
                 }
-                ConnectionState::Ready(attempt, mut geyser_stream) => {
+                ConnectionState::Ready(mut geyser_stream) => {
                     let receive_timeout = grpc_source.timeouts.as_ref().map(|t| t.receive_timeout);
                     'recv_loop: loop {
                         match timeout(
@@ -264,7 +276,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                             Err(_send_error) => {
                                                 warn!("downstream receiver closed, message is lost - aborting");
                                                 break 'recv_loop ConnectionState::FatalError(
-                                                    attempt,
+                                                    0,
                                                     FatalErrorReason::DownstreamChannelClosed,
                                                 );
                                             }
@@ -273,7 +285,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                     Err(SendTimeoutError::Closed(_)) => {
                                         warn!("downstream receiver closed - aborting");
                                         break 'recv_loop ConnectionState::FatalError(
-                                            attempt,
+                                            0,
                                             FatalErrorReason::DownstreamChannelClosed,
                                         );
                                     }
@@ -282,17 +294,17 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                             Ok(Some(Err(tonic_status))) => {
                                 // all tonic errors are recoverable
                                 warn!("error on {} - retrying: {:?}", grpc_source, tonic_status);
-                                break 'recv_loop ConnectionState::WaitReconnect(attempt);
+                                break 'recv_loop ConnectionState::WaitReconnect(1);
                             }
                             Ok(None) => {
                                 warn!("geyser stream closed on {} - retrying", grpc_source);
-                                break 'recv_loop ConnectionState::WaitReconnect(attempt);
+                                break 'recv_loop ConnectionState::WaitReconnect(1);
                             }
                             Err(_elapsed) => {
                                 warn!("timeout on {} - retrying", grpc_source);
-                                break 'recv_loop ConnectionState::WaitReconnect(attempt);
+                                break 'recv_loop ConnectionState::WaitReconnect(1);
                             }
-                        }
+                        } // -- END match
                     } // -- END receive loop
                 }
             } // -- END match
