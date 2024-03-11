@@ -66,7 +66,7 @@ pub fn create_geyser_reconnecting_stream(
                         }
                     });
 
-                    (ConnectionState::Connecting(attempt + 1, connection_task), Message::Connecting(attempt + 1))
+                    (ConnectionState::Connecting(attempt, connection_task), Message::Connecting(attempt + 1))
                 }
 
                 ConnectionState::Connecting(attempt, connection_task) => {
