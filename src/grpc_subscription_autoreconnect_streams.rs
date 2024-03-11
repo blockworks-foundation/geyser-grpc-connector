@@ -66,7 +66,7 @@ pub fn create_geyser_reconnecting_stream(
                         }
                     });
 
-                    (ConnectionState::Connecting(attempt + 1, connection_task), Message::Connecting(attempt + 1))
+                    (ConnectionState::Connecting(attempt + 1, connection_task), Message::Connecting(attempt))
                 }
 
                 ConnectionState::Connecting(attempt, connection_task) => {
@@ -77,7 +77,7 @@ pub fn create_geyser_reconnecting_stream(
                         Ok(Err(geyser_error)) => {
                              // ATM we consider all errors recoverable
                             warn!("subscribe failed on {} - retrying: {:?}", grpc_source, geyser_error);
-                            (ConnectionState::WaitReconnect(attempt + 1), Message::Connecting(attempt + 1))
+                            (ConnectionState::WaitReconnect(attempt + 1), Message::Connecting(attempt))
                         },
                         Err(geyser_grpc_task_error) => {
                             panic!("task aborted - should not happen :{geyser_grpc_task_error}");
