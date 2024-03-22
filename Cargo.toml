@@ -27,6 +27,8 @@ tracing = "0.1.37"
 itertools = "0.10.5"
 derive_more = "0.99.17"
 
+tonic-health = "0.10.2"
+
 base64 = "0.21.5"
 bincode = "1.3.3"
 

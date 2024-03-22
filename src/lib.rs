@@ -13,6 +13,7 @@ pub mod grpc_subscription_autoreconnect_streams;
 pub mod grpc_subscription_autoreconnect_tasks;
 pub mod grpcmultiplex_fastestwins;
 mod obfuscate;
+mod yellowstone_grpc_util;
 
 // 1-based attempt counter
 type Attempt = u32;

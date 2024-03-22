@@ -1,4 +1,4 @@
-use crate::{Attempt, GrpcSourceConfig, Message};
+use crate::{Attempt, GrpcSourceConfig, Message, yellowstone_grpc_util};
 use futures::{Stream, StreamExt};
 use log::{debug, error, info, log, trace, warn, Level};
 use std::time::Duration;
@@ -75,13 +75,15 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         attempt,
                         addr
                     );
-                    let connect_result = GeyserGrpcClient::connect_with_timeout(
+
+                    warn!("Use HACKED version of connect_with_timeout_hacked");
+                    let connect_result = yellowstone_grpc_util::connect_with_timeout_hacked(
                         addr,
                         token,
-                        config,
-                        connect_timeout,
-                        request_timeout,
-                        false,
+                        // config,
+                        // connect_timeout,
+                        // request_timeout,
+                        // false,
                     )
                     .await;
 
@@ -131,6 +133,8 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         grpc_source.timeouts.as_ref().map(|t| t.subscribe_timeout);
                     let subscribe_filter = subscribe_filter.clone();
                     debug!("Subscribe with filter {:?}", subscribe_filter);
+
+
 
                     let subscribe_result_timeout = timeout(
                         subscribe_timeout.unwrap_or(Duration::MAX),
