@@ -4,6 +4,7 @@ use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
 use std::pin::pin;
+use solana_sdk::pubkey::Pubkey;
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
@@ -13,6 +14,7 @@ use tracing::warn;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 use yellowstone_grpc_proto::prost::Message as _;
+use csv::Writer;
 
 #[allow(dead_code)]
 fn start_example_blockmini_consumer(
@@ -94,7 +96,7 @@ pub async fn main() {
 
     let green_stream = create_geyser_reconnecting_stream(
         config.clone(),
-        GeyserFilter(CommitmentConfig::finalized()).blocks_and_txs(),
+        GeyserFilter(CommitmentConfig::processed()).accounts(),
     );
 
     let blue_stream = create_geyser_reconnecting_stream(
@@ -103,13 +105,23 @@ pub async fn main() {
     );
 
     tokio::spawn(async move {
+        let mut wtr = csv::Writer::from_path("accounts-mainnet.csv").unwrap();
+
         let mut green_stream = pin!(green_stream);
         while let Some(message) = green_stream.next().await {
             match message {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
-                    let mapped = map_block_update(*subscriber_update);
-                    if let Some(slot) = mapped {
-                        info!("got update (green)!!! slot: {}", slot);
+                    match subscriber_update.update_oneof {
+                        Some(UpdateOneof::Account(update)) => {
+                            info!("got update (green)!!! slot: {}", update.slot);
+                            let key = update.account.unwrap().pubkey;
+                            let bytes: [u8; 32] =
+                                key.try_into().unwrap_or(Pubkey::default().to_bytes());
+                            let pubkey = Pubkey::new_from_array(bytes);
+                            wtr.write_record(&[pubkey.to_string()]).unwrap();
+                            wtr.flush().unwrap();
+                        }
+                        _ => {}
                     }
                 }
                 Message::Connecting(attempt) => {
