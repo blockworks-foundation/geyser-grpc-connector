@@ -80,7 +80,8 @@ pub fn create_geyser_reconnecting_stream(
                             (ConnectionState::WaitReconnect(attempt + 1), Message::Connecting(attempt))
                         },
                         Err(geyser_grpc_task_error) => {
-                            panic!("task aborted - should not happen :{geyser_grpc_task_error}");
+                            warn!("connection task aborted on {} - retrying: {:?}", grpc_source, geyser_grpc_task_error);
+                            (ConnectionState::WaitReconnect(attempt + 1), Message::Connecting(attempt))
                         }
                     }
 
