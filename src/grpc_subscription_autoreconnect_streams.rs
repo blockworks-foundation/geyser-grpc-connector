@@ -1,4 +1,4 @@
-use crate::{Attempt, GrpcSourceConfig, Message};
+use crate::{Attempt, GrpcSourceConfig, Message, yellowstone_grpc_util};
 use async_stream::stream;
 use futures::{Stream, StreamExt};
 use log::{debug, info, log, trace, warn, Level};
@@ -45,12 +45,22 @@ pub fn create_geyser_reconnecting_stream(
                         log!(if attempt > 1 { Level::Warn } else { Level::Debug }, "Connecting attempt #{} to {}", attempt, addr);
                         async move {
 
-                            let connect_result = GeyserGrpcClient::connect_with_timeout(
-                                    addr, token, config,
-                                    connect_timeout,
-                                    request_timeout,
-                                false)
-                                .await;
+                            // let connect_result = GeyserGrpcClient::connect_with_timeout(
+                            //         addr, token, config,
+                            //         connect_timeout,
+                            //         request_timeout,
+                            //     false)
+                            //     .await;
+                            warn!("Use HACKED version of connect_with_timeout_hacked");
+                            let connect_result = yellowstone_grpc_util::connect_with_timeout_hacked(
+                                addr,
+                                token,
+                                // config,
+                                // connect_timeout,
+                                // request_timeout,
+                                // false,
+                            )
+                            .await;
                             let mut client = connect_result?;
 
 
