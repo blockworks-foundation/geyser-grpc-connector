@@ -10,6 +10,7 @@ use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientError};
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::service::Interceptor;
 use yellowstone_grpc_proto::tonic::Status;
+use crate::yellowstone_grpc_util::EndpointConfig;
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>, F: Interceptor> {
     NotConnected(Attempt),
@@ -76,8 +77,51 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         addr
                     );
 
+                    // let connect_result = {
+                    //     warn!("Use NOT_HACKED version of connect_with_timeout with laggs");
+                    //     let connect_result = GeyserGrpcClient::connect_with_timeout(
+                    //         addr, token, config,
+                    //         connect_timeout,
+                    //         request_timeout,
+                    //     false)
+                    //     .await;
+                    //     connect_result
+                    // };
+
                     warn!("Use HACKED version of connect_with_timeout_hacked");
+                    // https://github.com/hyperium/tonic/blob/v0.10.2/tonic/src/transport/channel/mod.rs
+                    const DEFAULT_BUFFER_SIZE: usize = 1024;
+                    // see https://github.com/hyperium/hyper/blob/v0.14.28/src/proto/h2/client.rs
+                    const DEFAULT_CONN_WINDOW: u32 = 1024 * 1024 * 5; // 5mb
+                    const DEFAULT_STREAM_WINDOW: u32 = 1024 * 1024 * 2; // 2mb
+                    let endpoint_config_default = EndpointConfig {
+                        buffer_size: DEFAULT_BUFFER_SIZE,
+                        initial_connection_window_size: DEFAULT_CONN_WINDOW,
+                        initial_stream_window_size: DEFAULT_STREAM_WINDOW,
+                    };
+                    let endpoint_config_ckamm = EndpointConfig {
+                        buffer_size: 65536,
+                        initial_connection_window_size: 4194304,
+                        initial_stream_window_size: 4194304,
+                    };
+                    let endpoint_config_groovie1 = EndpointConfig {
+                        buffer_size: 65536,
+                        initial_connection_window_size: DEFAULT_CONN_WINDOW,
+                        initial_stream_window_size: DEFAULT_STREAM_WINDOW,
+                    };
+                    let endpoint_config_groovie2 = EndpointConfig {
+                        buffer_size: DEFAULT_BUFFER_SIZE,
+                        initial_connection_window_size: DEFAULT_CONN_WINDOW,
+                        initial_stream_window_size: 4194304,
+                    };
+                    let endpoint_config_groovie3 = EndpointConfig {
+                        buffer_size: 65536,
+                        initial_connection_window_size: DEFAULT_CONN_WINDOW,
+                        initial_stream_window_size: 4194304,
+                    };
+
                     let connect_result = yellowstone_grpc_util::connect_with_timeout_hacked(
+                        endpoint_config_groovie3,
                         addr,
                         token,
                         // config,

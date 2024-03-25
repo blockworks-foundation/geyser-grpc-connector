@@ -140,6 +140,7 @@ pub async fn main() {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
                     match subscriber_update.update_oneof {
                         Some(UpdateOneof::Block(update)) => {
+                            // note: if you see no data, the grpc client might be misconfigured
                             info!("got block update (blue)!!! slot: {}", update.slot);
                             let delta = last_slot_from_meta2.load(std::sync::atomic::Ordering::Relaxed) as i64 - update.slot as i64;
                             info!("delta: {}", delta);

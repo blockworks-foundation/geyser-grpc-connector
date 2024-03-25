@@ -8,6 +8,7 @@ use tokio::time::{sleep, timeout};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::Status;
+use crate::yellowstone_grpc_util::EndpointConfig;
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
     NotConnected(Attempt),
@@ -45,22 +46,38 @@ pub fn create_geyser_reconnecting_stream(
                         log!(if attempt > 1 { Level::Warn } else { Level::Debug }, "Connecting attempt #{} to {}", attempt, addr);
                         async move {
 
-                            // let connect_result = GeyserGrpcClient::connect_with_timeout(
+                            // let connect_result = {
+                            //     warn!("Use NOT_HACKED version of connect_with_timeout with laggs");
+                            //     let connect_result = GeyserGrpcClient::connect_with_timeout(
                             //         addr, token, config,
                             //         connect_timeout,
                             //         request_timeout,
                             //     false)
                             //     .await;
-                            warn!("Use HACKED version of connect_with_timeout_hacked");
-                            let connect_result = yellowstone_grpc_util::connect_with_timeout_hacked(
-                                addr,
-                                token,
-                                // config,
-                                // connect_timeout,
-                                // request_timeout,
-                                // false,
-                            )
-                            .await;
+                            //     connect_result
+                            // };
+
+                            let connect_result = {
+                               warn!("Use HACKED version of connect_with_timeout_hacked");
+                                let endpoint_config = EndpointConfig {
+                                    buffer_size: 65536,
+                                    initial_connection_window_size: 4194304,
+                                    initial_stream_window_size: 4194304,
+                                };
+                                let connect_result = yellowstone_grpc_util::connect_with_timeout_hacked(
+                                    endpoint_config,
+                                    addr,
+                                    token,
+                                    // config,
+                                    // connect_timeout,
+                                    // request_timeout,
+                                    // false,
+                                )
+                                .await;
+                                connect_result
+                            };
+
+
                             let mut client = connect_result?;
 
 
