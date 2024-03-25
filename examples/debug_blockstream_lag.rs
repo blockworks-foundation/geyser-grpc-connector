@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use futures::{Stream, StreamExt};
-use log::info;
+use log::{debug, info, trace};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
 use std::pin::pin;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use itertools::Itertools;
 use solana_sdk::pubkey::Pubkey;
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
@@ -18,6 +19,7 @@ use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterBlocksMeta, SubscribeUpdate};
 use yellowstone_grpc_proto::prost::Message as _;
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::{create_geyser_autoconnection_task, create_geyser_autoconnection_task_with_mpsc};
+use geyser_grpc_connector::histogram::calculate_percentiles;
 
 #[allow(dead_code)]
 fn start_example_blockmini_consumer(
@@ -120,7 +122,7 @@ pub async fn main() {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
                     match subscriber_update.update_oneof {
                         Some(UpdateOneof::BlockMeta(update)) => {
-                            info!("got blockmeta update (green)!!! slot: {}", update.slot);
+                            trace!("got blockmeta update (green)!!! slot: {}", update.slot);
                             last_slot_from_meta.store(update.slot, std::sync::atomic::Ordering::Relaxed);
                         }
                         _ => {}
@@ -134,16 +136,20 @@ pub async fn main() {
         warn!("Stream aborted");
     });
 
-    tokio::spawn(async move {
+    // buffer
+    let (delta_tx, mut delta_rx) = tokio::sync::mpsc::channel(10000);
+
+    let jh_block_task = tokio::spawn(async move {
         while let Some(message) = block_rx.recv().await {
             match message {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
                     match subscriber_update.update_oneof {
                         Some(UpdateOneof::Block(update)) => {
                             // note: if you see no data, the grpc client might be misconfigured
-                            info!("got block update (blue)!!! slot: {}", update.slot);
+                            trace!("got block update (blue)!!! slot: {}", update.slot);
                             let delta = last_slot_from_meta2.load(std::sync::atomic::Ordering::Relaxed) as i64 - update.slot as i64;
-                            info!("delta: {}", delta);
+                            debug!("block lag: {}", delta);
+                            delta_tx.send(delta).await.unwrap();
                         }
                         _ => {}
                     }
@@ -157,5 +163,14 @@ pub async fn main() {
     });
 
     // "infinite" sleep
-    sleep(Duration::from_secs(1800)).await;
+    sleep(Duration::from_secs(120)).await;
+    jh_block_task.abort();
+
+    let mut deltas = Vec::new();
+    delta_rx.recv_many(&mut deltas, 10000).await;
+
+    info!("Deltas: {:?}", deltas);
+
+    let histogram = calculate_percentiles(&deltas.iter().sorted().map(|x| *x as f64).collect_vec());
+    info!("Histogram: {}", histogram);
 }

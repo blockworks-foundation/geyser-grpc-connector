@@ -121,7 +121,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                     };
 
                     let connect_result = yellowstone_grpc_util::connect_with_timeout_hacked(
-                        endpoint_config_groovie3,
+                        endpoint_config_default,
                         addr,
                         token,
                         // config,

@@ -12,6 +12,7 @@ pub mod channel_plugger;
 pub mod grpc_subscription_autoreconnect_streams;
 pub mod grpc_subscription_autoreconnect_tasks;
 pub mod grpcmultiplex_fastestwins;
+pub mod histogram;
 mod obfuscate;
 mod yellowstone_grpc_util;
 
