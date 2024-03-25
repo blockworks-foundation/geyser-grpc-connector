@@ -1,4 +1,3 @@
-use futures::Stream;
 use log::{info, warn};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -22,10 +21,10 @@ use tokio::sync::mpsc::Receiver;
 use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::{
-    create_geyser_autoconnection_task, create_geyser_autoconnection_task_with_mpsc,
+    create_geyser_autoconnection_task_with_mpsc,
 };
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
-    create_multiplexed_stream, FromYellowstoneExtractor,
+    FromYellowstoneExtractor,
 };
 use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
 use tokio::time::{sleep, Duration};

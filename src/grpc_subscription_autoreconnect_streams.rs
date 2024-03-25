@@ -5,7 +5,7 @@ use log::{debug, info, log, trace, warn, Level};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
-use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
+use yellowstone_grpc_client::{GeyserGrpcClientResult};
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::Status;
 
