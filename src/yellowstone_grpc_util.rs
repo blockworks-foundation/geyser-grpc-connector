@@ -84,9 +84,6 @@ pub async fn connect_with_timeout_with_buffers<E, T>(
         .buffer_size(buffer_config.buffer_size)
         .initial_connection_window_size(buffer_config.conn_window)
         .initial_stream_window_size(buffer_config.stream_window);
-        // .buffer_size(Some(65536))  // 64kb (default: 1024)
-        // .initial_stream_window_size(4194304);// 4mb (default: 2mb)
-        // // .tls_config(tls_config.unwrap()).unwrap(); // FIXME
 
     if let Some(tls_config) = tls_config {
         endpoint = endpoint.tls_config(tls_config)?;
@@ -101,20 +98,13 @@ pub async fn connect_with_timeout_with_buffers<E, T>(
     }
 
     let x_token: Option<AsciiMetadataValue> = match x_token {
-        Some(x_token) => Some(x_token.try_into().unwrap()), // FIXME replace unwrap
+        Some(x_token) => Some(x_token.try_into()?),
         None => None,
     };
-    // match x_token {
-    //     Some(token) if token.is_empty() => {
-    //         panic!("empty token");
-    //     }
-    //     _ => {}
-    // }
     let interceptor = InterceptorXToken { x_token };
 
     let channel = endpoint.connect_lazy();
     let mut client = GeyserGrpcClient::new(
-        // TODO move tonic-health
         HealthClient::with_interceptor(channel.clone(), interceptor.clone()),
         GeyserClient::with_interceptor(channel, interceptor)
             .max_decoding_message_size(GeyserGrpcClient::max_decoding_message_size()),

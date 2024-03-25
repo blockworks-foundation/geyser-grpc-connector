@@ -3,7 +3,6 @@ use log::{info, warn};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
-use std::pin::pin;
 
 use base64::Engine;
 use itertools::Itertools;
