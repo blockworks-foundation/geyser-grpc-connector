@@ -17,6 +17,7 @@ use tracing::warn;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterBlocksMeta, SubscribeUpdate};
 use yellowstone_grpc_proto::prost::Message as _;
+use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::{create_geyser_autoconnection_task, create_geyser_autoconnection_task_with_mpsc};
 
 #[allow(dead_code)]
 fn start_example_blockmini_consumer(
@@ -96,22 +97,25 @@ pub async fn main() {
 
     info!("Write Block stream..");
 
-    let green_stream = create_geyser_reconnecting_stream(
+    let (blockmeta_tx, mut blockmeta_rx) = tokio::sync::mpsc::channel(10);
+    let (block_tx, mut block_rx) = tokio::sync::mpsc::channel(10);
+    let _ = create_geyser_autoconnection_task_with_mpsc(
         config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
+        blockmeta_tx
     );
 
-    let blue_stream = create_geyser_reconnecting_stream(
+    let _ = create_geyser_autoconnection_task_with_mpsc(
         config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_and_txs(),
+        block_tx
     );
 
     let last_slot_from_meta = Arc::new(AtomicU64::new(0));
     let last_slot_from_meta2 = last_slot_from_meta.clone();
 
     tokio::spawn(async move {
-        let mut green_stream = pin!(green_stream);
-        while let Some(message) = green_stream.next().await {
+        while let Some(message) = blockmeta_rx.recv().await {
             match message {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
                     match subscriber_update.update_oneof {
@@ -131,8 +135,7 @@ pub async fn main() {
     });
 
     tokio::spawn(async move {
-        let mut blue_stream = pin!(blue_stream);
-        while let Some(message) = blue_stream.next().await {
+        while let Some(message) = block_rx.recv().await {
             match message {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
                     match subscriber_update.update_oneof {
@@ -155,32 +158,3 @@ pub async fn main() {
     // "infinite" sleep
     sleep(Duration::from_secs(1800)).await;
 }
-
-fn map_block_update(update: SubscribeUpdate) -> Option<Slot> {
-    match update.update_oneof {
-        Some(UpdateOneof::Block(update_block_message)) => {
-            let slot = update_block_message.slot;
-            Some(slot)
-        }
-        _ => None,
-    }
-}
-
-
-pub fn blocks_meta_all_levels() -> SubscribeRequest {
-    let mut blocksmeta_subs = HashMap::new();
-    blocksmeta_subs.insert("client".to_string(), SubscribeRequestFilterBlocksMeta {});
-
-    SubscribeRequest {
-        slots: HashMap::new(),
-        accounts: Default::default(),
-        transactions: HashMap::new(),
-        entry: Default::default(),
-        blocks: HashMap::new(),
-        blocks_meta: blocksmeta_subs,
-        commitment: None, // look Ma, no commitment level
-        accounts_data_slice: Default::default(),
-        ping: None,
-    }
-}
-
