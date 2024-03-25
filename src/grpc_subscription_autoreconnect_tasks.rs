@@ -52,6 +52,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
 ) -> AbortHandle {
     // read this for argument: http://www.randomhacks.net/2019/03/08/should-rust-channels-panic-on-send/
 
+
     // task will be aborted when downstream receiver gets dropped
     let jh_geyser_task = tokio::spawn(async move {
         let mut state = ConnectionState::NotConnected(1);
@@ -76,14 +77,15 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         addr
                     );
 
-                    warn!("Use HACKED version of connect_with_timeout_hacked");
-                    let connect_result = yellowstone_grpc_util::connect_with_timeout_hacked(
+                    let buffer_config = yellowstone_grpc_util::GeyserGrpcClientBufferConfig::optimize_for_subscription(&subscribe_filter);
+                    debug!("Using Grpc Buffer config {:?}", buffer_config);
+                    let connect_result = yellowstone_grpc_util::connect_with_timeout_with_buffers(
                         addr,
                         token,
-                        // config,
-                        // connect_timeout,
-                        // request_timeout,
-                        // false,
+                        config,
+                        connect_timeout,
+                        request_timeout,
+                        buffer_config,
                     )
                     .await;
 

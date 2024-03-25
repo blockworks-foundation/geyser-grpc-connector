@@ -22,6 +22,7 @@ pub fn create_geyser_reconnecting_stream(
     grpc_source: GrpcSourceConfig,
     subscribe_filter: SubscribeRequest,
 ) -> impl Stream<Item = Message> {
+
     let mut state = ConnectionState::NotConnected(1);
 
     // in case of cancellation, we restart from here:
@@ -45,24 +46,18 @@ pub fn create_geyser_reconnecting_stream(
                         log!(if attempt > 1 { Level::Warn } else { Level::Debug }, "Connecting attempt #{} to {}", attempt, addr);
                         async move {
 
-                            // let connect_result = GeyserGrpcClient::connect_with_timeout(
-                            //         addr, token, config,
-                            //         connect_timeout,
-                            //         request_timeout,
-                            //     false)
-                            //     .await;
-                            warn!("Use HACKED version of connect_with_timeout_hacked");
-                            let connect_result = yellowstone_grpc_util::connect_with_timeout_hacked(
+                            let buffer_config = yellowstone_grpc_util::GeyserGrpcClientBufferConfig::optimize_for_subscription(&subscribe_filter);
+                            debug!("Using Grpc Buffer config {:?}", buffer_config);
+                            let connect_result = yellowstone_grpc_util::connect_with_timeout_with_buffers(
                                 addr,
                                 token,
-                                // config,
-                                // connect_timeout,
-                                // request_timeout,
-                                // false,
+                                config,
+                                connect_timeout,
+                                request_timeout,
+                                buffer_config,
                             )
                             .await;
                             let mut client = connect_result?;
-
 
                             debug!("Subscribe with filter {:?}", subscribe_filter);
 
