@@ -55,8 +55,7 @@ pub fn create_geyser_reconnecting_stream(
                                 connect_timeout,
                                 request_timeout,
                                 buffer_config,
-                            )
-                            .await;
+                            );
                             let mut client = connect_result?;
 
                             debug!("Subscribe with filter {:?}", subscribe_filter);

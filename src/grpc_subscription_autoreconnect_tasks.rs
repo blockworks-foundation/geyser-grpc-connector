@@ -86,8 +86,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         connect_timeout,
                         request_timeout,
                         buffer_config,
-                    )
-                    .await;
+                    );
 
                     match connect_result {
                         Ok(client) => ConnectionState::Connecting(attempt, client),
