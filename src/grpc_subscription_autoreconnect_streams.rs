@@ -1,11 +1,11 @@
-use crate::{Attempt, GrpcSourceConfig, Message, yellowstone_grpc_util};
+use crate::{yellowstone_grpc_util, Attempt, GrpcSourceConfig, Message};
 use async_stream::stream;
 use futures::{Stream, StreamExt};
 use log::{debug, info, log, trace, warn, Level};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
-use yellowstone_grpc_client::{GeyserGrpcClientResult};
+use yellowstone_grpc_client::GeyserGrpcClientResult;
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::Status;
 
@@ -22,7 +22,6 @@ pub fn create_geyser_reconnecting_stream(
     grpc_source: GrpcSourceConfig,
     subscribe_filter: SubscribeRequest,
 ) -> impl Stream<Item = Message> {
-
     let mut state = ConnectionState::NotConnected(1);
 
     // in case of cancellation, we restart from here:

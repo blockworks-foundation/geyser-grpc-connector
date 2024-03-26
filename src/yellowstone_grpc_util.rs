@@ -5,11 +5,10 @@ use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
 use yellowstone_grpc_proto::geyser::SubscribeRequest;
 use yellowstone_grpc_proto::prost::bytes::Bytes;
 use yellowstone_grpc_proto::tonic;
-use yellowstone_grpc_proto::tonic::metadata::AsciiMetadataValue;
 use yellowstone_grpc_proto::tonic::metadata::errors::InvalidMetadataValue;
+use yellowstone_grpc_proto::tonic::metadata::AsciiMetadataValue;
 use yellowstone_grpc_proto::tonic::service::Interceptor;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
-
 
 // see https://github.com/hyperium/tonic/blob/v0.10.2/tonic/src/transport/channel/mod.rs
 const DEFAULT_BUFFER_SIZE: usize = 1024;
@@ -35,21 +34,18 @@ impl Default for GeyserGrpcClientBufferConfig {
 }
 
 impl GeyserGrpcClientBufferConfig {
-
     pub fn optimize_for_subscription(filter: &SubscribeRequest) -> GeyserGrpcClientBufferConfig {
         if !filter.blocks.is_empty() {
             GeyserGrpcClientBufferConfig {
-                buffer_size: Some(65536),  // 64kb (default: 1k)
-                conn_window: Some(5242880), // 5mb (=default)
+                buffer_size: Some(65536),     // 64kb (default: 1k)
+                conn_window: Some(5242880),   // 5mb (=default)
                 stream_window: Some(4194304), // 4mb (default: 2m)
             }
         } else {
             GeyserGrpcClientBufferConfig::default()
         }
     }
-
 }
-
 
 pub fn connect_with_timeout_with_buffers<E, T>(
     endpoint: E,
@@ -59,9 +55,10 @@ pub fn connect_with_timeout_with_buffers<E, T>(
     request_timeout: Option<Duration>,
     buffer_config: GeyserGrpcClientBufferConfig,
 ) -> GeyserGrpcClientResult<GeyserGrpcClient<impl Interceptor>>
-    where
-        E: Into<Bytes>,
-        T: TryInto<AsciiMetadataValue, Error = InvalidMetadataValue>, {
+where
+    E: Into<Bytes>,
+    T: TryInto<AsciiMetadataValue, Error = InvalidMetadataValue>,
+{
     // see https://github.com/blockworks-foundation/geyser-grpc-connector/issues/10
     let mut endpoint = tonic::transport::Endpoint::from_shared(endpoint)?
         .buffer_size(buffer_config.buffer_size)

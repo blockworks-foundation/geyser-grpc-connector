@@ -20,12 +20,8 @@ use solana_sdk::transaction::TransactionError;
 use tokio::sync::mpsc::Receiver;
 use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
 
-use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::{
-    create_geyser_autoconnection_task_with_mpsc,
-};
-use geyser_grpc_connector::grpcmultiplex_fastestwins::{
-    FromYellowstoneExtractor,
-};
+use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
+use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;

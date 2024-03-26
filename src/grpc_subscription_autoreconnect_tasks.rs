@@ -1,4 +1,4 @@
-use crate::{Attempt, GrpcSourceConfig, Message, yellowstone_grpc_util};
+use crate::{yellowstone_grpc_util, Attempt, GrpcSourceConfig, Message};
 use futures::{Stream, StreamExt};
 use log::{debug, error, info, log, trace, warn, Level};
 use std::time::Duration;
@@ -51,7 +51,6 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
     mpsc_downstream: tokio::sync::mpsc::Sender<Message>,
 ) -> AbortHandle {
     // read this for argument: http://www.randomhacks.net/2019/03/08/should-rust-channels-panic-on-send/
-
 
     // task will be aborted when downstream receiver gets dropped
     let jh_geyser_task = tokio::spawn(async move {
@@ -134,8 +133,6 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         grpc_source.timeouts.as_ref().map(|t| t.subscribe_timeout);
                     let subscribe_filter = subscribe_filter.clone();
                     debug!("Subscribe with filter {:?}", subscribe_filter);
-
-
 
                     let subscribe_result_timeout = timeout(
                         subscribe_timeout.unwrap_or(Duration::MAX),
