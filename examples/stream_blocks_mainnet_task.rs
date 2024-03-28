@@ -1,9 +1,8 @@
 use log::{info, warn};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
+use tokio_util::sync::CancellationToken;
 use std::env;
-use std::sync::Arc;
-use tokio::sync::Notify;
 
 use base64::Engine;
 use itertools::Itertools;
@@ -120,7 +119,7 @@ pub async fn main() {
         subscribe_timeout: Duration::from_secs(5),
         receive_timeout: Duration::from_secs(5),
     };
-    let exit_notify = Arc::new(Notify::new());
+    let exit_notify = CancellationToken::new();
 
     let green_config =
         GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());

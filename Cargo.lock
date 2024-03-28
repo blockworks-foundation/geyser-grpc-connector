@@ -1250,6 +1250,7 @@ dependencies = [
  "solana-logger",
  "solana-sdk",
  "tokio",
+ "tokio-util",
  "tonic-health",
  "tracing",
  "tracing-subscriber",
