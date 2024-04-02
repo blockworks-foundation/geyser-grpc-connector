@@ -1,11 +1,10 @@
 use crate::{yellowstone_grpc_util, Attempt, GrpcSourceConfig, Message};
 use futures::{Stream, StreamExt};
 use log::{debug, error, info, log, trace, warn, Level};
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::error::SendTimeoutError;
 use tokio::sync::mpsc::Receiver;
-use tokio::sync::Notify;
+use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout, Instant};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientError};
@@ -36,7 +35,7 @@ enum FatalErrorReason {
 pub fn create_geyser_autoconnection_task(
     grpc_source: GrpcSourceConfig,
     subscribe_filter: SubscribeRequest,
-    exit_notify: Arc<Notify>,
+    exit_notify: broadcast::Receiver<()>,
 ) -> (JoinHandle<()>, Receiver<Message>) {
     let (sender, receiver_channel) = tokio::sync::mpsc::channel::<Message>(1);
 
@@ -57,7 +56,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
     grpc_source: GrpcSourceConfig,
     subscribe_filter: SubscribeRequest,
     mpsc_downstream: tokio::sync::mpsc::Sender<Message>,
-    exit_notify: Arc<Notify>,
+    mut exit_notify: broadcast::Receiver<()>,
 ) -> JoinHandle<()> {
     // read this for argument: http://www.randomhacks.net/2019/03/08/should-rust-channels-panic-on-send/
 
@@ -98,7 +97,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         ) => {
                             res
                         },
-                        _ = exit_notify.notified() => {
+                        _ = exit_notify.recv() => {
                             break 'main_loop;
                         }
                     };
@@ -157,7 +156,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         ) => {
                             res
                         },
-                        _ = exit_notify.notified() => {
+                        _ = exit_notify.recv() => {
                             break 'main_loop;
                         }
                     };
@@ -220,7 +219,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         _ = sleep(Duration::from_secs_f32(backoff_secs)) => {
                             //slept
                         },
-                        _ = exit_notify.notified() => {
+                        _ = exit_notify.recv() => {
                             break 'main_loop;
                         }
                     };
@@ -254,7 +253,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         _ = sleep(Duration::from_secs_f32(backoff_secs)) => {
                             //slept
                         },
-                        _ = exit_notify.notified() => {
+                        _ = exit_notify.recv() => {
                             break 'main_loop;
                         }
                     };
@@ -270,7 +269,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                             ) => {
                                 res
                             },
-                            _ = exit_notify.notified() => {
+                            _ = exit_notify.recv() => {
                                 break 'main_loop;
                             }
                         };
@@ -293,7 +292,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                     ) => {
                                         res
                                     },
-                                    _ = exit_notify.notified() => {
+                                    _ = exit_notify.recv() => {
                                         break 'main_loop;
                                     }
                                 };
@@ -320,7 +319,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                             res = mpsc_downstream.send(the_message)=> {
                                                 res
                                             },
-                                            _ = exit_notify.notified() => {
+                                            _ = exit_notify.recv() => {
                                                 break 'main_loop;
                                             }
                                         };
