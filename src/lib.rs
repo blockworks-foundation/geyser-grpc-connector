@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::time::Duration;
 use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterBlocks, SubscribeRequestFilterBlocksMeta, SubscribeRequestFilterSlots, SubscribeUpdate};
+use yellowstone_grpc_proto::prost::bytes::Bytes;
+use yellowstone_grpc_proto::tonic;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 
 pub mod channel_plugger;
@@ -30,6 +32,7 @@ pub struct GrpcConnectionTimeouts {
     pub subscribe_timeout: Duration,
     pub receive_timeout: Duration,
 }
+
 
 #[derive(Clone)]
 pub struct GrpcSourceConfig {
@@ -77,6 +80,15 @@ impl GrpcSourceConfig {
             tls_config,
             timeouts: Some(timeouts),
         }
+    }
+
+    pub fn build_tonic_endpoint(&self) -> tonic::transport::Endpoint {
+        let mut endpoint = tonic::transport::Endpoint::from_shared(self.grpc_addr.clone())
+            .expect("grpc_addr must be a valid url");
+        if let Some(tls_config) = &self.tls_config {
+            endpoint = endpoint.tls_config(tls_config.clone()).expect("tls_config must be valid");
+        }
+        endpoint
     }
 }
 

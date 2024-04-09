@@ -5,8 +5,9 @@ use log::{debug, info, log, trace, warn, Level};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
-use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
+use yellowstone_grpc_client::{GeyserGrpcBuilder, GeyserGrpcBuilderResult, GeyserGrpcClient, GeyserGrpcClientResult, InterceptorXToken};
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
+use yellowstone_grpc_proto::tonic::metadata::AsciiMetadataValue;
 use yellowstone_grpc_proto::tonic::Status;
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
@@ -24,41 +25,48 @@ pub fn create_geyser_reconnecting_stream(
 ) -> impl Stream<Item = Message> {
     let mut state = ConnectionState::NotConnected(1);
 
+
+
     // in case of cancellation, we restart from here:
     // thus we want to keep the progression in a state object outside the stream! makro
     let the_stream = stream! {
+
+        let addr = grpc_source.grpc_addr.clone();
+        let grpc_x_token = grpc_source.grpc_x_token.clone();
+        let tls_config = grpc_source.tls_config.clone();
+        // let receive_timeout = grpc_source.timeouts.as_ref().map(|t| t.receive_timeout);
+        let receive_timeout = Some(Duration::from_secs(10)); // FIXME
+
         loop {
             let yield_value;
+
 
             (state, yield_value) = match state {
 
                 ConnectionState::NotConnected(attempt) => {
 
+                    // let connect_timeout = grpc_source.timeouts.as_ref().map(|t| t.connect_timeout);
+                    // let request_timeout = grpc_source.timeouts.as_ref().map(|t| t.request_timeout);
+                    // let subscribe_timeout = grpc_source.timeouts.map(|t| t.subscribe_timeout);
+                    let subscribe_timeout = Some(Duration::from_secs(10)); // FIXME
+
+
+
+
                     let connection_task = tokio::spawn({
-                        let addr = grpc_source.grpc_addr.clone();
-                        let token = grpc_source.grpc_x_token.clone();
-                        let config = grpc_source.tls_config.clone();
-                        let connect_timeout = grpc_source.timeouts.as_ref().map(|t| t.connect_timeout);
-                        let request_timeout = grpc_source.timeouts.as_ref().map(|t| t.request_timeout);
-                        let subscribe_timeout = grpc_source.timeouts.as_ref().map(|t| t.subscribe_timeout);
                         let subscribe_filter = subscribe_filter.clone();
+                        let builder = build_client(grpc_source.clone()).unwrap(); // TODO instead of unwrap, move to Fatal state
                         log!(if attempt > 1 { Level::Warn } else { Level::Debug }, "Connecting attempt #{} to {}", attempt, addr);
                         async move {
 
-                            let connect_result = GeyserGrpcClient::connect_with_timeout(
-                                    addr, token, config,
-                                    connect_timeout,
-                                    request_timeout,
-                                false)
-                                .await;
-                            let mut client = connect_result?;
 
+                            let mut client = builder.connect().await.unwrap(); // FIXME
 
                             debug!("Subscribe with filter {:?}", subscribe_filter);
 
                             let subscribe_result = timeout(subscribe_timeout.unwrap_or(Duration::MAX),
                                 client
-                                    .subscribe_once2(subscribe_filter))
+                                    .subscribe_once(subscribe_filter))
                             .await;
 
                             // maybe not optimal
@@ -88,7 +96,6 @@ pub fn create_geyser_reconnecting_stream(
                 }
 
                 ConnectionState::Ready(mut geyser_stream) => {
-                    let receive_timeout = grpc_source.timeouts.as_ref().map(|t| t.receive_timeout);
                     match timeout(receive_timeout.unwrap_or(Duration::MAX), geyser_stream.next()).await {
                         Ok(Some(Ok(update_message))) => {
                             trace!("> recv update message from {}", grpc_source);
@@ -128,6 +135,34 @@ pub fn create_geyser_reconnecting_stream(
     }; // -- stream!
 
     the_stream
+}
+
+fn build_client(grpc_source_config: GrpcSourceConfig) -> GeyserGrpcBuilderResult<GeyserGrpcBuilder> {
+    let mut builder = GeyserGrpcClient::build_from_shared(grpc_source_config.grpc_addr)?;
+
+    if let Some(tls_config) = grpc_source_config.tls_config {
+        builder = builder.tls_config(tls_config)?;
+    }
+
+    if let Some(timeouts) = grpc_source_config.timeouts {
+
+        builder = builder.timeout(timeouts.connect_timeout);
+
+        builder = builder.timeout(timeouts.request_timeout);
+
+        // subscribe + receive timeout are handled somewhere else
+
+    }
+
+    let x_token: Option<AsciiMetadataValue> = match grpc_source_config.grpc_x_token {
+        Some(x_token) => Some(x_token.try_into()?),
+        None => None,
+    };
+    let interceptor = InterceptorXToken { x_token };
+
+    builder = builder.interceptor(interceptor);
+
+    Ok(builder)
 }
 
 #[cfg(test)]
