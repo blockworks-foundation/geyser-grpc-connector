@@ -10,6 +10,7 @@ use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientError};
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::service::Interceptor;
 use yellowstone_grpc_proto::tonic::Status;
+use crate::yellowstone_grpc_util::{connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig};
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>, F: Interceptor> {
     NotConnected(Attempt),
@@ -75,13 +76,14 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         attempt,
                         addr
                     );
-                    let connect_result = GeyserGrpcClient::connect_with_timeout(
+
+                    let connect_result = connect_with_timeout_with_buffers(
                         addr,
                         token,
                         config,
                         connect_timeout,
                         request_timeout,
-                        false,
+                        GeyserGrpcClientBufferConfig::optimize_for_subscription(&subscribe_filter),
                     )
                     .await;
 

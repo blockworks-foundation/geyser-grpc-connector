@@ -84,10 +84,10 @@ pub async fn main() {
     );
 
     let timeouts = GrpcConnectionTimeouts {
-        connect_timeout: Duration::from_secs(5),
-        request_timeout: Duration::from_secs(5),
-        subscribe_timeout: Duration::from_secs(5),
-        receive_timeout: Duration::from_secs(5),
+        connect_timeout: Duration::from_secs(25),
+        request_timeout: Duration::from_secs(25),
+        subscribe_timeout: Duration::from_secs(25),
+        receive_timeout: Duration::from_secs(25),
     };
 
     let config = GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());
@@ -137,9 +137,10 @@ pub async fn main() {
         while let Some(message) = blue_stream.next().await {
             match message {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
+                    let bytes = subscriber_update.encoded_len();
                     let mapped = map_block_update(*subscriber_update);
                     if let Some(slot) = mapped {
-                        info!("got update (blue)!!! slot: {}", slot);
+                        info!("got update (blue)!!! slot: {}, {} bytes", slot, bytes);
                     }
                 }
                 Message::Connecting(attempt) => {
