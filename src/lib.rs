@@ -5,6 +5,8 @@ use std::time::Duration;
 use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterBlocks, SubscribeRequestFilterBlocksMeta, SubscribeRequestFilterSlots, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 
+pub use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult, GeyserGrpcClientError};
+
 pub mod channel_plugger;
 pub mod grpc_subscription_autoreconnect_streams;
 pub mod grpc_subscription_autoreconnect_tasks;
