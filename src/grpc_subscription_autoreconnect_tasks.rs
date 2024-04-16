@@ -1,3 +1,4 @@
+use std::future::Future;
 use crate::{yellowstone_grpc_util, Attempt, GrpcSourceConfig, Message};
 use futures::{Stream, StreamExt};
 use log::{debug, error, info, log, trace, warn, Level};
@@ -23,6 +24,8 @@ enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>, F: Inter
     // non-recoverable error
     FatalError(Attempt, FatalErrorReason),
     WaitReconnect(Attempt),
+    // exit signal received
+    GracefulShutdown,
 }
 
 enum FatalErrorReason {
@@ -86,23 +89,8 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
 
                     let buffer_config = yellowstone_grpc_util::GeyserGrpcClientBufferConfig::optimize_for_subscription(&subscribe_filter);
                     debug!("Using Grpc Buffer config {:?}", buffer_config);
-                    let connect_result = tokio::select! {
-                            res = connect_with_timeout_with_buffers(
-                            addr,
-                            token,
-                            config,
-                            connect_timeout,
-                            request_timeout,
-                            buffer_config,
-                        ) => {
-                            res
-                        },
-                        _ = exit_notify.recv() => {
-                            break 'main_loop;
-                        }
-                    };
 
-                    match connect_result {
+                    let connection_handler = |connect_result| match connect_result {
                         Ok(client) => ConnectionState::Connecting(attempt, client),
                         Err(GeyserGrpcClientError::InvalidUri(_)) => ConnectionState::FatalError(
                             attempt + 1,
@@ -141,7 +129,22 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                             );
                             ConnectionState::RecoverableConnectionError(attempt + 1)
                         }
+                    };
+
+                    let fut_connector = connect_with_timeout_with_buffers(
+                        addr,
+                        token,
+                        config,
+                        connect_timeout,
+                        request_timeout,
+                        buffer_config,
+                    );
+
+                    match await_or_exit(fut_connector, exit_notify.recv()).await {
+                        Some(connection_result) => connection_handler(connection_result),
+                        None => ConnectionState::GracefulShutdown
                     }
+
                 }
                 ConnectionState::Connecting(attempt, mut client) => {
                     let subscribe_timeout =
@@ -149,19 +152,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                     let subscribe_filter = subscribe_filter.clone();
                     debug!("Subscribe with filter {:?}", subscribe_filter);
 
-                    let subscribe_result_timeout = tokio::select! {
-                        res = timeout(
-                            subscribe_timeout.unwrap_or(Duration::MAX),
-                            client.subscribe_once2(subscribe_filter),
-                        ) => {
-                            res
-                        },
-                        _ = exit_notify.recv() => {
-                            break 'main_loop;
-                        }
-                    };
-
-                    match subscribe_result_timeout {
+                    let subscribe_handler = |subscribe_result_timeout| match subscribe_result_timeout {
                         Ok(subscribe_result) => {
                             match subscribe_result {
                                 Ok(geyser_stream) => {
@@ -207,7 +198,18 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                             );
                             ConnectionState::RecoverableConnectionError(attempt + 1)
                         }
+                    };
+
+                    let fut_subscribe = timeout(
+                        subscribe_timeout.unwrap_or(Duration::MAX),
+                        client.subscribe_once2(subscribe_filter),
+                    );
+
+                    match await_or_exit(fut_subscribe, exit_notify.recv()).await {
+                        Some(subscribe_result_timeout) => subscribe_handler(subscribe_result_timeout),
+                        None => ConnectionState::GracefulShutdown
                     }
+
                 }
                 ConnectionState::RecoverableConnectionError(attempt) => {
                     let backoff_secs = 1.5_f32.powi(attempt as i32).min(15.0);
@@ -215,15 +217,13 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         "waiting {} seconds, then reconnect to {}",
                         backoff_secs, grpc_source
                     );
-                    tokio::select! {
-                        _ = sleep(Duration::from_secs_f32(backoff_secs)) => {
-                            //slept
-                        },
-                        _ = exit_notify.recv() => {
-                            break 'main_loop;
-                        }
-                    };
-                    ConnectionState::NotConnected(attempt)
+
+                    let fut_sleep = sleep(Duration::from_secs_f32(backoff_secs));
+
+                    match await_or_exit(fut_sleep, exit_notify.recv()).await {
+                        Some(()) => ConnectionState::NotConnected(attempt),
+                        None => ConnectionState::GracefulShutdown
+                    }
                 }
                 ConnectionState::FatalError(_attempt, reason) => match reason {
                     FatalErrorReason::DownstreamChannelClosed => {
@@ -249,30 +249,27 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         "waiting {} seconds, then reconnect to {}",
                         backoff_secs, grpc_source
                     );
-                    tokio::select! {
-                        _ = sleep(Duration::from_secs_f32(backoff_secs)) => {
-                            //slept
-                        },
-                        _ = exit_notify.recv() => {
-                            break 'main_loop;
-                        }
-                    };
-                    ConnectionState::NotConnected(attempt)
+
+                    let fut_sleep = sleep(Duration::from_secs_f32(backoff_secs));
+
+                    match await_or_exit(fut_sleep, exit_notify.recv()).await {
+                        Some(()) => ConnectionState::NotConnected(attempt),
+                        None => ConnectionState::GracefulShutdown
+                    }
                 }
                 ConnectionState::Ready(mut geyser_stream) => {
                     let receive_timeout = grpc_source.timeouts.as_ref().map(|t| t.receive_timeout);
                     'recv_loop: loop {
-                        let geyser_stream_res = tokio::select! {
-                            res = timeout(
-                                receive_timeout.unwrap_or(Duration::MAX),
-                                geyser_stream.next(),
-                            ) => {
-                                res
-                            },
-                            _ = exit_notify.recv() => {
-                                break 'main_loop;
-                            }
+
+                        let fut_stream = timeout(
+                            receive_timeout.unwrap_or(Duration::MAX),
+                            geyser_stream.next(),
+                        );
+
+                        let Some(geyser_stream_res) = await_or_exit(fut_stream, exit_notify.recv()).await else {
+                            break 'recv_loop ConnectionState::GracefulShutdown;
                         };
+
                         match geyser_stream_res {
                             Ok(Some(Ok(update_message))) => {
                                 trace!("> recv update message from {}", grpc_source);
@@ -284,17 +281,15 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                 };
                                 let started_at = Instant::now();
 
-                                let mpsc_downstream_result = tokio::select! {
-                                    res = mpsc_downstream
-                                    .send_timeout(
-                                        Message::GeyserSubscribeUpdate(Box::new(update_message)),
-                                        warning_threshold,
-                                    ) => {
-                                        res
-                                    },
-                                    _ = exit_notify.recv() => {
-                                        break 'main_loop;
-                                    }
+                                let fut_send = mpsc_downstream.send_timeout(
+                                    Message::GeyserSubscribeUpdate(Box::new(update_message)),
+                                    warning_threshold,
+                                );
+
+                                let Some(mpsc_downstream_result) = await_or_exit(
+                                    fut_send,
+                                    exit_notify.recv()).await else {
+                                    break 'recv_loop ConnectionState::GracefulShutdown;
                                 };
 
                                 match mpsc_downstream_result {
@@ -315,13 +310,12 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                     Err(SendTimeoutError::Timeout(the_message)) => {
                                         warn!("downstream receiver did not pick up message for {}ms - keep waiting", warning_threshold.as_millis());
 
-                                        let mpsc_downstream_result = tokio::select! {
-                                            res = mpsc_downstream.send(the_message)=> {
-                                                res
-                                            },
-                                            _ = exit_notify.recv() => {
-                                                break 'main_loop;
-                                            }
+                                        let fut_send = mpsc_downstream.send(the_message);
+
+                                        let Some(mpsc_downstream_result) = await_or_exit(
+                                            fut_send,
+                                            exit_notify.recv()).await else {
+                                            break 'recv_loop ConnectionState::GracefulShutdown;
                                         };
 
                                         match mpsc_downstream_result {
@@ -364,15 +358,37 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                 warn!("timeout on {} - retrying", grpc_source);
                                 break 'recv_loop ConnectionState::WaitReconnect(1);
                             }
-                        } // -- END match
+                        }; // -- END match
+
                     } // -- END receive loop
                 }
+                ConnectionState::GracefulShutdown => {
+                    debug!("shutting down {} gracefully on exit signal", grpc_source);
+                    break 'main_loop;
+                }
             } // -- END match
-        } // -- endless state loop
+        } // -- state loop; break ONLY on graceful shutdown
     });
 
     jh_geyser_task
 }
+
+
+async fn await_or_exit<F, E>(future: F, exit_notify: E) -> Option<F::Output>
+    where
+        F: Future,
+        E: Future,
+{
+    tokio::select! {
+        res = future => {
+            Some(res)
+        },
+        _ = exit_notify => {
+            None
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
