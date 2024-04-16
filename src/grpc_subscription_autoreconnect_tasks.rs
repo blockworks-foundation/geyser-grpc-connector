@@ -141,8 +141,8 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                     );
 
                     match await_or_exit(fut_connector, exit_notify.recv()).await {
-                        Some(connection_result) => connection_handler(connection_result),
-                        None => ConnectionState::GracefulShutdown
+                        MaybeExit::Continue(connection_result) => connection_handler(connection_result),
+                        MaybeExit::Exit => ConnectionState::GracefulShutdown
                     }
 
                 }
@@ -206,8 +206,8 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                     );
 
                     match await_or_exit(fut_subscribe, exit_notify.recv()).await {
-                        Some(subscribe_result_timeout) => subscribe_handler(subscribe_result_timeout),
-                        None => ConnectionState::GracefulShutdown
+                        MaybeExit::Continue(subscribe_result_timeout) => subscribe_handler(subscribe_result_timeout),
+                        MaybeExit::Exit => ConnectionState::GracefulShutdown
                     }
 
                 }
@@ -221,8 +221,8 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                     let fut_sleep = sleep(Duration::from_secs_f32(backoff_secs));
 
                     match await_or_exit(fut_sleep, exit_notify.recv()).await {
-                        Some(()) => ConnectionState::NotConnected(attempt),
-                        None => ConnectionState::GracefulShutdown
+                        MaybeExit::Continue(()) => ConnectionState::NotConnected(attempt),
+                        MaybeExit::Exit => ConnectionState::GracefulShutdown
                     }
                 }
                 ConnectionState::FatalError(_attempt, reason) => match reason {
@@ -253,8 +253,8 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                     let fut_sleep = sleep(Duration::from_secs_f32(backoff_secs));
 
                     match await_or_exit(fut_sleep, exit_notify.recv()).await {
-                        Some(()) => ConnectionState::NotConnected(attempt),
-                        None => ConnectionState::GracefulShutdown
+                        MaybeExit::Continue(()) => ConnectionState::NotConnected(attempt),
+                        MaybeExit::Exit => ConnectionState::GracefulShutdown
                     }
                 }
                 ConnectionState::Ready(mut geyser_stream) => {
@@ -266,7 +266,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                             geyser_stream.next(),
                         );
 
-                        let Some(geyser_stream_res) = await_or_exit(fut_stream, exit_notify.recv()).await else {
+                        let MaybeExit::Continue(geyser_stream_res) = await_or_exit(fut_stream, exit_notify.recv()).await else {
                             break 'recv_loop ConnectionState::GracefulShutdown;
                         };
 
@@ -286,7 +286,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                     warning_threshold,
                                 );
 
-                                let Some(mpsc_downstream_result) = await_or_exit(
+                                let MaybeExit::Continue(mpsc_downstream_result) = await_or_exit(
                                     fut_send,
                                     exit_notify.recv()).await else {
                                     break 'recv_loop ConnectionState::GracefulShutdown;
@@ -312,7 +312,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
 
                                         let fut_send = mpsc_downstream.send(the_message);
 
-                                        let Some(mpsc_downstream_result) = await_or_exit(
+                                        let MaybeExit::Continue(mpsc_downstream_result) = await_or_exit(
                                             fut_send,
                                             exit_notify.recv()).await else {
                                             break 'recv_loop ConnectionState::GracefulShutdown;
@@ -374,17 +374,22 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
 }
 
 
-async fn await_or_exit<F, E>(future: F, exit_notify: E) -> Option<F::Output>
+enum MaybeExit<T> {
+    Continue(T),
+    Exit,
+}
+
+async fn await_or_exit<F, E>(future: F, exit_notify: E) -> MaybeExit<F::Output>
     where
         F: Future,
         E: Future,
 {
     tokio::select! {
         res = future => {
-            Some(res)
+            MaybeExit::Continue(res)
         },
         _ = exit_notify => {
-            None
+            MaybeExit::Exit
         }
     }
 }
