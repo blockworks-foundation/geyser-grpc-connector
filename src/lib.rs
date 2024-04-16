@@ -9,7 +9,7 @@ pub mod channel_plugger;
 pub mod grpc_subscription_autoreconnect_streams;
 pub mod grpc_subscription_autoreconnect_tasks;
 pub mod grpcmultiplex_fastestwins;
-mod yellowstone_grpc_util;
+pub mod yellowstone_grpc_util;
 mod obfuscate;
 
 // 1-based attempt counter

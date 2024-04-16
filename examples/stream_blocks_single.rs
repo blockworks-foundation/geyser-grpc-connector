@@ -14,7 +14,6 @@ use tracing::warn;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 use yellowstone_grpc_proto::prost::Message as _;
-use csv::Writer;
 
 #[allow(dead_code)]
 fn start_example_blockmini_consumer(

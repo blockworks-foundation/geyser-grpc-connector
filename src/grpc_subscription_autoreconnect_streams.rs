@@ -5,9 +5,10 @@ use log::{debug, info, log, trace, warn, Level};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
-use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
+use yellowstone_grpc_client::GeyserGrpcClientResult;
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::Status;
+use crate::yellowstone_grpc_util::{connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig};
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
     NotConnected(Attempt),
@@ -45,12 +46,16 @@ pub fn create_geyser_reconnecting_stream(
                         log!(if attempt > 1 { Level::Warn } else { Level::Debug }, "Connecting attempt #{} to {}", attempt, addr);
                         async move {
 
-                            let connect_result = GeyserGrpcClient::connect_with_timeout(
-                                    addr, token, config,
-                                    connect_timeout,
-                                    request_timeout,
-                                false)
-                                .await;
+                            let connect_result = connect_with_timeout_with_buffers(
+                                addr,
+                                token,
+                                config,
+                                connect_timeout,
+                                request_timeout,
+                                GeyserGrpcClientBufferConfig::optimize_for_subscription(&subscribe_filter),
+                            )
+                            .await;
+
                             let mut client = connect_result?;
 
 

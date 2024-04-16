@@ -104,7 +104,7 @@ pub async fn connect_with_timeout_with_buffers<E, T>(
     let interceptor = InterceptorXToken { x_token };
 
     let channel = endpoint.connect_lazy();
-    let mut client = GeyserGrpcClient::new(
+    let client = GeyserGrpcClient::new(
         HealthClient::with_interceptor(channel.clone(), interceptor.clone()),
         GeyserClient::with_interceptor(channel, interceptor)
             .max_decoding_message_size(GeyserGrpcClient::max_decoding_message_size()),
