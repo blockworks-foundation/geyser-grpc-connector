@@ -105,21 +105,18 @@ pub async fn main() {
     );
 
     tokio::spawn(async move {
-        let mut wtr = csv::Writer::from_path("accounts-mainnet.csv").unwrap();
-
         let mut green_stream = pin!(green_stream);
         while let Some(message) = green_stream.next().await {
             match message {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
                     match subscriber_update.update_oneof {
                         Some(UpdateOneof::Account(update)) => {
-                            info!("got update (green)!!! slot: {}", update.slot);
-                            let key = update.account.unwrap().pubkey;
+                            let account_info = update.account.unwrap();
+                            let account_pk = Pubkey::try_from(account_info.pubkey).unwrap();
+                            info!("got account update (green)!!! {} - {:?} - {} bytes",
+                                update.slot, account_pk, account_info.data.len());
                             let bytes: [u8; 32] =
-                                key.try_into().unwrap_or(Pubkey::default().to_bytes());
-                            let pubkey = Pubkey::new_from_array(bytes);
-                            wtr.write_record(&[pubkey.to_string()]).unwrap();
-                            wtr.flush().unwrap();
+                                account_pk.to_bytes();
                         }
                         _ => {}
                     }
