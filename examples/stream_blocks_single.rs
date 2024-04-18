@@ -73,6 +73,7 @@ pub async fn main() {
     tracing_subscriber::fmt::init();
     // console_subscriber::init();
 
+    let COMMITMENT_LEVEL = CommitmentConfig::processed();
     let grpc_addr_green = env::var("GRPC_ADDR").expect("need grpc url for green");
     let grpc_x_token_green = env::var("GRPC_X_TOKEN").ok();
 
@@ -95,30 +96,27 @@ pub async fn main() {
 
     let green_stream = create_geyser_reconnecting_stream(
         config.clone(),
-        GeyserFilter(CommitmentConfig::processed()).accounts(),
+        GeyserFilter(COMMITMENT_LEVEL).accounts(),
     );
 
     let blue_stream = create_geyser_reconnecting_stream(
         config.clone(),
-        GeyserFilter(CommitmentConfig::processed()).blocks_and_txs(),
+        GeyserFilter(COMMITMENT_LEVEL).blocks_and_txs(),
     );
 
     tokio::spawn(async move {
-        let mut wtr = csv::Writer::from_path("accounts-mainnet.csv").unwrap();
-
         let mut green_stream = pin!(green_stream);
         while let Some(message) = green_stream.next().await {
             match message {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
                     match subscriber_update.update_oneof {
                         Some(UpdateOneof::Account(update)) => {
-                            info!("got update (green)!!! slot: {}", update.slot);
-                            let key = update.account.unwrap().pubkey;
+                            let account_info = update.account.unwrap();
+                            let account_pk = Pubkey::try_from(account_info.pubkey).unwrap();
+                            info!("got account update (green)!!! {} - {:?} - {} bytes",
+                                update.slot, account_pk, account_info.data.len());
                             let bytes: [u8; 32] =
-                                key.try_into().unwrap_or(Pubkey::default().to_bytes());
-                            let pubkey = Pubkey::new_from_array(bytes);
-                            wtr.write_record(&[pubkey.to_string()]).unwrap();
-                            wtr.flush().unwrap();
+                                account_pk.to_bytes();
                         }
                         _ => {}
                     }
@@ -133,13 +131,13 @@ pub async fn main() {
 
     tokio::spawn(async move {
         let mut blue_stream = pin!(blue_stream);
+        let extractor = BlockMiniExtractor(COMMITMENT_LEVEL);
         while let Some(message) = blue_stream.next().await {
             match message {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
-                    let bytes = subscriber_update.encoded_len();
-                    let mapped = map_block_update(*subscriber_update);
-                    if let Some(slot) = mapped {
-                        info!("got update (blue)!!! slot: {}, {} bytes", slot, bytes);
+                    let mapped = extractor.map_yellowstone_update(*subscriber_update);
+                    if let Some((slot, block_mini)) = mapped {
+                        info!("got update (blue)!!! block: {} - {} bytes", slot, block_mini.blocksize);
                     }
                 }
                 Message::Connecting(attempt) => {

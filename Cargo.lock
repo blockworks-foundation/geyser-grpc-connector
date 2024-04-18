@@ -1249,7 +1249,7 @@ dependencies = [
 
 [[package]]
 name = "geyser-grpc-connector"
-version = "0.10.5+yellowstone.1.13"
+version = "0.10.6+yellowstone.1.13"
 dependencies = [
  "anyhow",
  "async-stream",
