@@ -10,29 +10,6 @@ use yellowstone_grpc_proto::tonic::metadata::AsciiMetadataValue;
 use yellowstone_grpc_proto::tonic::service::Interceptor;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 
-pub async fn connect_with_timeout<E, T>(
-    endpoint: E,
-    x_token: Option<T>,
-    tls_config: Option<ClientTlsConfig>,
-    connect_timeout: Option<Duration>,
-    request_timeout: Option<Duration>,
-    connect_lazy: bool,
-) -> GeyserGrpcClientResult<GeyserGrpcClient<impl Interceptor>>
-where
-    E: Into<Bytes>,
-    T: TryInto<AsciiMetadataValue, Error = InvalidMetadataValue>,
-{
-    GeyserGrpcClient::connect_with_timeout(
-        endpoint,
-        x_token,
-        tls_config,
-        connect_timeout,
-        request_timeout,
-        connect_lazy,
-    )
-    .await
-}
-
 // see https://github.com/hyperium/tonic/blob/v0.10.2/tonic/src/transport/channel/mod.rs
 const DEFAULT_BUFFER_SIZE: usize = 1024;
 // see https://github.com/hyperium/hyper/blob/v0.14.28/src/proto/h2/client.rs#L45
