@@ -5,6 +5,7 @@ use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
 use yellowstone_grpc_proto::geyser::SubscribeRequest;
 use yellowstone_grpc_proto::prost::bytes::Bytes;
 use yellowstone_grpc_proto::tonic;
+use tonic::codec::CompressionEncoding;
 use yellowstone_grpc_proto::tonic::metadata::errors::InvalidMetadataValue;
 use yellowstone_grpc_proto::tonic::metadata::AsciiMetadataValue;
 use yellowstone_grpc_proto::tonic::service::Interceptor;
@@ -87,7 +88,9 @@ where
     let client = GeyserGrpcClient::new(
         HealthClient::with_interceptor(channel.clone(), interceptor.clone()),
         GeyserClient::with_interceptor(channel, interceptor)
-            .max_decoding_message_size(GeyserGrpcClient::max_decoding_message_size()),
+            .max_decoding_message_size(GeyserGrpcClient::max_decoding_message_size())
+            .accept_compressed(CompressionEncoding::Gzip)
+            .send_compressed(CompressionEncoding::Gzip),
     );
     Ok(client)
 }
