@@ -94,6 +94,7 @@ pub async fn main() {
         green_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_and_txs(),
         exit_notify,
+        false,
     );
     let mut message_channel =
         spawn_broadcast_channel_plug(tokio::sync::broadcast::channel(8), message_channel);

@@ -133,18 +133,21 @@ pub async fn main() {
         GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
         autoconnect_tx.clone(),
         exit_notify.resubscribe(),
+        false,
     );
     let _blue_stream_ah = create_geyser_autoconnection_task_with_mpsc(
         blue_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
         autoconnect_tx.clone(),
         exit_notify.resubscribe(),
+        false,
     );
     let _toxiproxy_stream_ah = create_geyser_autoconnection_task_with_mpsc(
         toxiproxy_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
         autoconnect_tx.clone(),
         exit_notify,
+        false,
     );
     start_example_blockmeta_consumer(blockmeta_rx);
 

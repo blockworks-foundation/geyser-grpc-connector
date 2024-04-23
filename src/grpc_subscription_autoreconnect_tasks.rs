@@ -39,6 +39,7 @@ pub fn create_geyser_autoconnection_task(
     grpc_source: GrpcSourceConfig,
     subscribe_filter: SubscribeRequest,
     exit_notify: broadcast::Receiver<()>,
+    compressed: bool,
 ) -> (JoinHandle<()>, Receiver<Message>) {
     let (sender, receiver_channel) = tokio::sync::mpsc::channel::<Message>(1);
 
@@ -47,6 +48,7 @@ pub fn create_geyser_autoconnection_task(
         subscribe_filter,
         sender,
         exit_notify,
+        compressed
     );
 
     (join_handle, receiver_channel)
@@ -60,6 +62,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
     subscribe_filter: SubscribeRequest,
     mpsc_downstream: tokio::sync::mpsc::Sender<Message>,
     mut exit_notify: broadcast::Receiver<()>,
+    compressed: bool,
 ) -> JoinHandle<()> {
     // read this for argument: http://www.randomhacks.net/2019/03/08/should-rust-channels-panic-on-send/
 
@@ -131,14 +134,16 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         }
                     };
 
-                    let fut_connector = connect_with_timeout_with_buffers(
-                        addr,
-                        token,
-                        config,
-                        connect_timeout,
-                        request_timeout,
-                        buffer_config,
-                    );
+                    let fut_connector = 
+                        connect_with_timeout_with_buffers(
+                            addr,
+                            token,
+                            config,
+                            connect_timeout,
+                            request_timeout,
+                            buffer_config,
+                            compressed,
+                        );
 
                     match await_or_exit(fut_connector, exit_notify.recv()).await {
                         MaybeExit::Continue(connection_result) => connection_handler(connection_result),

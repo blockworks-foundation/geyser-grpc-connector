@@ -96,11 +96,13 @@ pub async fn main() {
     let green_stream = create_geyser_reconnecting_stream(
         config.clone(),
         GeyserFilter(CommitmentConfig::processed()).accounts(),
+        false,
     );
 
     let blue_stream = create_geyser_reconnecting_stream(
         config.clone(),
         GeyserFilter(CommitmentConfig::processed()).blocks_and_txs(),
+        false,
     );
 
     tokio::spawn(async move {

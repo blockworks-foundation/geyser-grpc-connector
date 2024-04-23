@@ -22,6 +22,7 @@ enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
 pub fn create_geyser_reconnecting_stream(
     grpc_source: GrpcSourceConfig,
     subscribe_filter: SubscribeRequest,
+    compressed: bool,
 ) -> impl Stream<Item = Message> {
     let mut state = ConnectionState::NotConnected(1);
 
@@ -47,14 +48,15 @@ pub fn create_geyser_reconnecting_stream(
                         async move {
 
                             let connect_result = connect_with_timeout_with_buffers(
-                                addr,
-                                token,
-                                config,
-                                connect_timeout,
-                                request_timeout,
-                                GeyserGrpcClientBufferConfig::optimize_for_subscription(&subscribe_filter),
-                            )
-                            .await;
+                                    addr,
+                                    token,
+                                    config,
+                                    connect_timeout,
+                                    request_timeout,
+                                    GeyserGrpcClientBufferConfig::optimize_for_subscription(&subscribe_filter),
+                                    compressed,
+                                )
+                                .await;
 
                             let mut client = connect_result?;
 
