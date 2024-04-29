@@ -93,11 +93,13 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>) {
                     Some(UpdateOneof::Account(update)) => {
                         let account_info = update.account.unwrap();
                         let account_pk = Pubkey::try_from(account_info.pubkey).unwrap();
+                        // note: slot is referencing the block that is just built while the slot number reported from BlockMeta/Slot uses the slot after the block is built
                         let slot = update.slot;
                         let account_receive_time = get_epoch_sec();
 
                         if actual_slot != slot {
                             if actual_slot != 0 {
+                                // the perfect is value "-1"
                                 recent_slot_deltas.push_back((actual_slot as i64) - (slot as i64));
                                 if recent_slot_deltas.len() > RECENT_SLOTS_LIMIT {
                                     recent_slot_deltas.pop_front();
