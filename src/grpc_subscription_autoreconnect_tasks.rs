@@ -6,6 +6,7 @@ use std::time::Duration;
 use tokio::sync::mpsc::error::SendTimeoutError;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::broadcast;
+use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout, Instant};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientError};
@@ -379,16 +380,27 @@ enum MaybeExit<T> {
     Exit,
 }
 
-async fn await_or_exit<F, E>(future: F, exit_notify: E) -> MaybeExit<F::Output>
+async fn await_or_exit<F, E, T>(future: F, exit_notify: E) -> MaybeExit<F::Output>
     where
         F: Future,
-        E: Future,
+        E: Future<Output = Result<T, RecvError>>,
 {
     tokio::select! {
         res = future => {
             MaybeExit::Continue(res)
         },
-        _ = exit_notify => {
+        res = exit_notify => {
+            match res {
+                Ok(_) => {
+                    debug!("exit on signal");
+                }
+                 Err(RecvError::Lagged(_)) => {
+                    warn!("exit on signal (lag)");
+                }
+                Err(RecvError::Closed) => {
+                    warn!("exit on signal (channel close)");
+                }
+            }
             MaybeExit::Exit
         }
     }
