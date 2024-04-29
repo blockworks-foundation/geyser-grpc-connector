@@ -118,7 +118,7 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>) {
 
                                 info!("Slot: {} - Updates: {}", slot, updates_per_slot.get(&current_slot).unwrap());
 
-                                let mut counters = count_updates_per_slot_account.iter()
+                                let counters = count_updates_per_slot_account.iter()
                                     .filter(|((slot, _pubkey), _)| slot == &current_slot)
                                     .map(|((_slot, _pubkey), count)| *count as f64)
                                     .sorted_by(|a, b| a.partial_cmp(b).unwrap())
@@ -132,6 +132,7 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>) {
                                     .sorted_by(|a, b| a.partial_cmp(b).unwrap())
                                     .collect_vec();
                                 let deltas_histogram = histogram_percentiles::calculate_percentiles(&deltas);
+                                info!("Deltas slots list: {:?}", recent_slot_deltas);
                                 info!("Deltas histogram: {}", deltas_histogram);
 
                             }
