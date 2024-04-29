@@ -140,8 +140,7 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>) {
                                 info!("Deltas histogram: {}", deltas_histogram);
 
                                 if let Some(actual_block_time) = block_time_per_slot.get(&current_slot) {
-                                    let now = get_epoch_sec();
-                                    info!("Block time for slot {}: delta {} seconds", current_slot, *actual_block_time - now);
+                                    info!("Block time for slot {}: delta {} seconds", current_slot, account_receive_time - *actual_block_time);
                                 }
 
                             }
