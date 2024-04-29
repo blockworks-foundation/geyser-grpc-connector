@@ -1,11 +1,12 @@
 use std::collections::{HashMap, VecDeque};
 use futures::{Stream, StreamExt};
 use log::info;
-use solana_sdk::clock::Slot;
+use solana_sdk::clock::{Slot, UnixTimestamp};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
 use std::env;
 use std::pin::pin;
+use std::time::{SystemTime, UNIX_EPOCH};
 use itertools::Itertools;
 use tokio::sync::mpsc::Receiver;
 
@@ -55,9 +56,9 @@ pub async fn main() {
         exit_notify.resubscribe(),
     );
 
-    let _slots_task = create_geyser_autoconnection_task_with_mpsc(
+    let _blocksmeta_task = create_geyser_autoconnection_task_with_mpsc(
         config.clone(),
-        GeyserFilter(CommitmentConfig::processed()).slots(),
+        GeyserFilter(CommitmentConfig::processed()).blocks_meta(),
         autoconnect_tx.clone(),
         exit_notify.resubscribe(),
     );
@@ -82,6 +83,8 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>) {
         // slot from slot stream
         let mut actual_slot: Slot = 0;
 
+        // seconds since epoch
+        let mut block_time_per_slot = HashMap::<Slot, UnixTimestamp>::new();
         let mut recent_slot_deltas: VecDeque<i64> = VecDeque::with_capacity(RECENT_SLOTS_LIMIT);
 
         loop {
@@ -91,6 +94,7 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>) {
                         let account_info = update.account.unwrap();
                         let account_pk = Pubkey::try_from(account_info.pubkey).unwrap();
                         let slot = update.slot;
+                        let account_receive_time = get_epoch_sec();
 
                         if actual_slot != slot {
                             if actual_slot != 0 {
@@ -135,13 +139,19 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>) {
                                 info!("Deltas slots list: {:?}", recent_slot_deltas);
                                 info!("Deltas histogram: {}", deltas_histogram);
 
+                                if let Some(actual_block_time) = block_time_per_slot.get(&current_slot) {
+                                    let now = get_epoch_sec();
+                                    info!("Block time for slot {}: delta {} seconds", current_slot, *actual_block_time - now);
+                                }
+
                             }
                             current_slot = slot;
                         }
 
                     }
-                    Some(UpdateOneof::Slot(update)) => {
+                    Some(UpdateOneof::BlockMeta(update)) => {
                         actual_slot = update.slot;
+                        block_time_per_slot.insert(actual_slot, update.block_time.unwrap().timestamp);
                     }
                     None => {}
                     _ => {}
@@ -154,4 +164,11 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>) {
             }
         }
     });
+}
+
+fn get_epoch_sec() -> UnixTimestamp {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as UnixTimestamp
 }
