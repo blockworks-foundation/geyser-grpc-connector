@@ -1,3 +1,6 @@
+use crate::yellowstone_grpc_util::{
+    connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig,
+};
 use crate::{Attempt, GrpcSourceConfig, Message};
 use async_stream::stream;
 use futures::{Stream, StreamExt};
@@ -8,7 +11,6 @@ use tokio::time::{sleep, timeout};
 use yellowstone_grpc_client::GeyserGrpcClientResult;
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::Status;
-use crate::yellowstone_grpc_util::{connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig};
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
     NotConnected(Attempt),
