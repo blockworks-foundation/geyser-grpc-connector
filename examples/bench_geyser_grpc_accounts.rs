@@ -69,7 +69,7 @@ pub async fn main() {
     sleep(Duration::from_secs(1800)).await;
 }
 
-
+// note: this keeps track of lot of data and might blow up memory
 fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>) {
     const RECENT_SLOTS_LIMIT: usize = 30;
 
@@ -77,30 +77,33 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>) {
 
         let mut bytes_per_slot = HashMap::<Slot, usize>::new();
         let mut updates_per_slot = HashMap::<Slot, usize>::new();
-        let mut count_updates_per_slot_account = HashMap::<(Slot, Pubkey), usize>::new();
+        let mut wallclock_updates_per_slot_account = HashMap::<(Slot, Pubkey), Vec<SystemTime>>::new();
         // slot written by account update
         let mut current_slot: Slot = 0;
         // slot from slot stream
-        let mut actual_slot: Slot = 0;
+        let mut slot_just_completed: Slot = 0;
 
         // seconds since epoch
         let mut block_time_per_slot = HashMap::<Slot, UnixTimestamp>::new();
+        // wall clock time of block completion (i.e. processed) reported by the block meta stream
+        let mut block_completion_notification_time_per_slot = HashMap::<Slot, SystemTime>::new();
         let mut recent_slot_deltas: VecDeque<i64> = VecDeque::with_capacity(RECENT_SLOTS_LIMIT);
 
         loop {
             match geyser_messages_rx.recv().await {
                 Some(Message::GeyserSubscribeUpdate(update)) => match update.update_oneof {
                     Some(UpdateOneof::Account(update)) => {
+                        let now = SystemTime::now();
                         let account_info = update.account.unwrap();
                         let account_pk = Pubkey::try_from(account_info.pubkey).unwrap();
                         // note: slot is referencing the block that is just built while the slot number reported from BlockMeta/Slot uses the slot after the block is built
                         let slot = update.slot;
                         let account_receive_time = get_epoch_sec();
 
-                        if actual_slot != slot {
-                            if actual_slot != 0 {
+                        if slot_just_completed != slot {
+                            if slot_just_completed != 0 {
                                 // the perfect is value "-1"
-                                recent_slot_deltas.push_back((actual_slot as i64) - (slot as i64));
+                                recent_slot_deltas.push_back((slot_just_completed as i64) - (slot as i64));
                                 if recent_slot_deltas.len() > RECENT_SLOTS_LIMIT {
                                     recent_slot_deltas.pop_front();
                                 }
@@ -113,9 +116,9 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>) {
                         updates_per_slot.entry(slot)
                             .and_modify(|entry| *entry += 1)
                             .or_insert(1);
-                        count_updates_per_slot_account.entry((slot, account_pk))
-                            .and_modify(|entry| *entry += 1)
-                            .or_insert(1);
+                        wallclock_updates_per_slot_account.entry((slot, account_pk))
+                            .and_modify(|entry| entry.push(now))
+                            .or_insert(vec![now]);
 
                         if current_slot != slot {
                             info!("Slot: {}", slot);
@@ -124,14 +127,13 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>) {
 
                                 info!("Slot: {} - Updates: {}", slot, updates_per_slot.get(&current_slot).unwrap());
 
-                                let counters = count_updates_per_slot_account.iter()
+                                let counters = wallclock_updates_per_slot_account.iter()
                                     .filter(|((slot, _pubkey), _)| slot == &current_slot)
-                                    .map(|((_slot, _pubkey), count)| *count as f64)
+                                    .map(|((_slot, _pubkey), updates)| updates.len() as f64)
                                     .sorted_by(|a, b| a.partial_cmp(b).unwrap())
                                     .collect_vec();
                                 let count_histogram = histogram_percentiles::calculate_percentiles(&counters);
                                 info!("Count histogram: {}", count_histogram);
-
 
                                 let deltas = recent_slot_deltas.iter()
                                     .map(|x| *x as f64)
@@ -145,14 +147,29 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>) {
                                     info!("Block time for slot {}: delta {} seconds", current_slot, account_receive_time - *actual_block_time);
                                 }
 
+                                let wallclock_minmax = wallclock_updates_per_slot_account.iter()
+                                    .filter(|((slot, _pubkey), _)| slot == &current_slot)
+                                    .flat_map(|((_slot, _pubkey), updates)| updates)
+                                    .minmax();
+                                if let Some((min, max)) = wallclock_minmax.into_option() {
+                                    info!("Wallclock timestamp between first and last account update received for slot {}: {:.2}s",
+                                        current_slot,
+                                        max.duration_since(*min).unwrap().as_secs_f64()
+                                    );
+                                }
+
+
                             }
                             current_slot = slot;
                         }
 
                     }
                     Some(UpdateOneof::BlockMeta(update)) => {
-                        actual_slot = update.slot;
-                        block_time_per_slot.insert(actual_slot, update.block_time.unwrap().timestamp);
+                        let now = SystemTime::now();
+                        // completed depends on commitment level which is processed ATM
+                        slot_just_completed = update.slot;
+                        block_time_per_slot.insert(slot_just_completed, update.block_time.unwrap().timestamp);
+                        block_completion_notification_time_per_slot.insert(slot_just_completed, now);
                     }
                     None => {}
                     _ => {}
