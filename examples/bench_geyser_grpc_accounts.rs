@@ -123,9 +123,9 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>) {
                         if current_slot != slot {
                             info!("Slot: {}", slot);
                             if current_slot != 0 {
-                                info!("Slot: {} - {:.2} MiB", slot, *bytes_per_slot.get(&current_slot).unwrap() as f64 / 1024.0 / 1024.0 );
+                                info!("Slot: {} - account data transferred: {:.2} MiB", slot, *bytes_per_slot.get(&current_slot).unwrap() as f64 / 1024.0 / 1024.0 );
 
-                                info!("Slot: {} - Updates: {}", slot, updates_per_slot.get(&current_slot).unwrap());
+                                info!("Slot: {} - num of update messages: {}", slot, updates_per_slot.get(&current_slot).unwrap());
 
                                 let counters = wallclock_updates_per_slot_account.iter()
                                     .filter(|((slot, _pubkey), _)| slot == &current_slot)
