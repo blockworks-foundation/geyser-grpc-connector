@@ -1,18 +1,22 @@
 use std::collections::HashMap;
 use futures::{Stream, StreamExt};
-use log::info;
+use log::{debug, info, trace};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
 use std::pin::pin;
 use std::str::FromStr;
-use solana_account_decoder::parse_token::{parse_token, spl_token_ids, TokenAccountType};
+use std::sync::Arc;
+use dashmap::DashMap;
+use solana_account_decoder::parse_token::{parse_token, spl_token_ids, TokenAccountType, UiTokenAccount};
+use solana_account_decoder::parse_token::UiAccountState::Initialized;
 use solana_sdk::pubkey::Pubkey;
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
 use tokio::time::{sleep, Duration};
+use tracing::field::debug;
 use tracing::warn;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeUpdate};
@@ -49,6 +53,11 @@ pub async fn main() {
         token_accounts(),
     );
 
+    // owner x mint -> amount
+    let token_account_by_ownermint: Arc<DashMap<Pubkey, DashMap<Pubkey, UiTokenAccount>>> = Arc::new(DashMap::with_capacity(10000));
+    let token_account_by_ownermint_read = token_account_by_ownermint.clone();
+    let token_account_by_ownermint = token_account_by_ownermint.clone();
+
 
     tokio::spawn(async move {
         let mut green_stream = pin!(green_stream);
@@ -59,15 +68,18 @@ pub async fn main() {
                         Some(UpdateOneof::Account(update)) => {
                             let account = update.account.unwrap();
                             let account_pk = Pubkey::try_from(account.pubkey).unwrap();
+                            trace!("got account update (green)!!! {} - {:?} - {} bytes",
+                                update.slot, account_pk, account.data.len());
 
-                            let account_type = parse_token(&account.data, Some(6)).unwrap();
-                            match account_type {
-                                TokenAccountType::Account(account_ui) => {
+                            match parse_token(&account.data, Some(6)) {
+                                Ok(TokenAccountType::Account(account_ui)) => {
                                     // UiTokenAccount {
                                     //   mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-                                    //   owner: "7XDMxfmzmL2Hqhh8ABp4Byc5UEsMWfQdWo6r5vEVQNb8",
+                                    //   owner: "9un5wqE3q4oCjyrDkwsdD48KteCJitQX5978Vh7KKxHo",
                                     //   token_amount: UiTokenAmount {
-                                    //     ui_amount: Some(0.0), decimals: 6, amount: "0", ui_amount_string: "0"
+                                    //     ui_amount: Some(8229995.070667),
+                                    //     decimals: 6, amount: "8229995070667",
+                                    //     ui_amount_string: "8229995.070667"
                                     //   },
                                     //   delegate: None,
                                     //   state: Initialized,
@@ -77,16 +89,27 @@ pub async fn main() {
                                     //   close_authority: None,
                                     //   extensions: []
                                     // }
-                                    info!("it's an Account: {:?}", account_ui);
+                                    if matches!(account_ui.state, Initialized) {
+                                        let owner = Pubkey::from_str(&account_ui.owner).unwrap();
+                                        let mint = Pubkey::from_str(&account_ui.mint).unwrap();
+                                        // 6 decimals as requested
+                                        let amount = &account_ui.token_amount.amount;
+                                        trace!("update balance for mint {} of owner {}: {}", mint, owner, amount);
+                                        token_account_by_ownermint.entry(owner)
+                                            .or_insert_with(DashMap::new)
+                                            .insert(mint, account_ui);
+                                    }
                                 }
-                                TokenAccountType::Mint(mint) => {
+                                Ok(TokenAccountType::Mint(mint)) => {
                                     // not interesting
                                 }
-                                TokenAccountType::Multisig(_) => {}
+                                Ok(TokenAccountType::Multisig(_)) => {}
+                                Err(parse_error) => {
+                                    debug!("Could not parse account {} - {}", account_pk, parse_error);
+                                }
                             }
 
-                            info!("got account update (green)!!! {} - {:?} - {} bytes",
-                                update.slot, account_pk, account.data.len());
+
                             let bytes: [u8; 32] =
                                 account_pk.to_bytes();
                         }
@@ -100,6 +123,30 @@ pub async fn main() {
         }
         warn!("Stream aborted");
     });
+
+
+    tokio::spawn(async move {
+
+        loop {
+            let mut total = 0;
+            for accounts_by_mint in token_account_by_ownermint_read.iter() {
+                for token_account_mint in accounts_by_mint.iter() {
+                    total += 1;
+                    let (owner, mint, account) = (accounts_by_mint.key(), token_account_mint.key(), token_account_mint.value());
+                    debug!("{} - {} - {}", owner, mint, account.token_amount.ui_amount_string);
+                    // info!("xx {} - {} - {}", foo.key(), bar.key(), bar.value().token_amount.ui_amount_string);
+                }
+                // for (mint, account) in mint_to_amount.iter() {
+                //     total += 1;
+                //     debug!("{} - {} - {} - {}", owner, mint, account.token_amount.ui_amount_string, account.token_amount.amount);
+                // }
+            }
+            debug!("Total: {}", total);
+            sleep(Duration::from_secs(1)).await;
+        }
+
+    });
+
 
     // "infinite" sleep
     sleep(Duration::from_secs(1800)).await;
