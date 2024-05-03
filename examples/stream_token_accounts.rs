@@ -94,7 +94,10 @@ pub async fn main() {
                                         let mint = Pubkey::from_str(&account_ui.mint).unwrap();
                                         // 6 decimals as requested
                                         let amount = &account_ui.token_amount.amount;
-                                        trace!("update balance for mint {} of owner {}: {}", mint, owner, amount);
+                                        // groovie wallet
+                                        if account_ui.owner.starts_with("66fEFnKy") {
+                                            info!("update balance for mint {} of owner {}: {}", mint, owner, amount);
+                                        }
                                         token_account_by_ownermint.entry(owner)
                                             .or_insert_with(DashMap::new)
                                             .insert(mint, account_ui);
@@ -105,7 +108,7 @@ pub async fn main() {
                                 }
                                 Ok(TokenAccountType::Multisig(_)) => {}
                                 Err(parse_error) => {
-                                    debug!("Could not parse account {} - {}", account_pk, parse_error);
+                                    trace!("Could not parse account {} - {}", account_pk, parse_error);
                                 }
                             }
 
@@ -134,15 +137,10 @@ pub async fn main() {
                     total += 1;
                     let (owner, mint, account) = (accounts_by_mint.key(), token_account_mint.key(), token_account_mint.value());
                     debug!("{} - {} - {}", owner, mint, account.token_amount.ui_amount_string);
-                    // info!("xx {} - {} - {}", foo.key(), bar.key(), bar.value().token_amount.ui_amount_string);
                 }
-                // for (mint, account) in mint_to_amount.iter() {
-                //     total += 1;
-                //     debug!("{} - {} - {} - {}", owner, mint, account.token_amount.ui_amount_string, account.token_amount.amount);
-                // }
             }
-            debug!("Total: {}", total);
-            sleep(Duration::from_secs(1)).await;
+            info!("Total owner x mint entries in cache map: {}", total);
+            sleep(Duration::from_millis(50)).await;
         }
 
     });
