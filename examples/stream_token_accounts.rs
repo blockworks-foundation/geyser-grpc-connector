@@ -22,6 +22,9 @@ use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeUpdate};
 use yellowstone_grpc_proto::prost::Message as _;
 
+
+const ENABLE_TIMESTAMP_TAGGING: bool = true;
+
 #[tokio::main]
 pub async fn main() {
     // RUST_LOG=info,stream_blocks_mainnet=debug,geyser_grpc_connector=trace
@@ -71,6 +74,11 @@ pub async fn main() {
                             trace!("got account update (green)!!! {} - {:?} - {} bytes",
                                 update.slot, account_pk, account.data.len());
 
+                            if ENABLE_TIMESTAMP_TAGGING {
+                                let since_the_epoch = std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH).expect("Time went backwards");
+                                info!("got account update: write_version={};timestamp_us={};slot={}", account.write_version, since_the_epoch.as_micros(), update.slot);
+                            }
+
                             match parse_token(&account.data, Some(6)) {
                                 Ok(TokenAccountType::Account(account_ui)) => {
                                     // UiTokenAccount {
@@ -89,19 +97,23 @@ pub async fn main() {
                                     //   close_authority: None,
                                     //   extensions: []
                                     // }
-                                    if matches!(account_ui.state, Initialized) {
-                                        let owner = Pubkey::from_str(&account_ui.owner).unwrap();
-                                        let mint = Pubkey::from_str(&account_ui.mint).unwrap();
-                                        // 6 decimals as requested
-                                        let amount = &account_ui.token_amount.amount;
-                                        // groovie wallet
-                                        if account_ui.owner.starts_with("66fEFnKy") {
-                                            info!("update balance for mint {} of owner {}: {}", mint, owner, amount);
-                                        }
-                                        token_account_by_ownermint.entry(owner)
-                                            .or_insert_with(DashMap::new)
-                                            .insert(mint, account_ui);
+                                    // all different states are covered
+                                    // is_native: both true+false are sent
+                                    assert_eq!(account.executable, false);
+                                    assert_eq!(account.rent_epoch, u64::MAX);
+
+                                    let owner = Pubkey::from_str(&account_ui.owner).unwrap();
+                                    let mint = Pubkey::from_str(&account_ui.mint).unwrap();
+                                    // 6 decimals as requested
+                                    let amount = &account_ui.token_amount.amount;
+                                    // groovie wallet
+                                    if account_ui.owner.starts_with("66fEFnKy") {
+                                        info!("update balance for mint {} of owner {}: {}", mint, owner, amount);
                                     }
+                                    token_account_by_ownermint.entry(owner)
+                                        .or_insert_with(DashMap::new)
+                                        .insert(mint, account_ui);
+
                                 }
                                 Ok(TokenAccountType::Mint(mint)) => {
                                     // not interesting
@@ -136,7 +148,7 @@ pub async fn main() {
                 for token_account_mint in accounts_by_mint.iter() {
                     total += 1;
                     let (owner, mint, account) = (accounts_by_mint.key(), token_account_mint.key(), token_account_mint.value());
-                    debug!("{} - {} - {}", owner, mint, account.token_amount.ui_amount_string);
+                    // debug!("{} - {} - {}", owner, mint, account.token_amount.ui_amount_string);
                 }
             }
             info!("Total owner x mint entries in cache map: {}", total);
