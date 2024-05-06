@@ -152,7 +152,7 @@ pub async fn main() {
                 }
             }
             info!("Total owner x mint entries in cache map: {}", total);
-            sleep(Duration::from_millis(50)).await;
+            sleep(Duration::from_millis(1500)).await;
         }
 
     });

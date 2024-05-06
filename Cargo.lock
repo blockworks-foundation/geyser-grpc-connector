@@ -1275,6 +1275,7 @@ dependencies = [
  "itertools 0.10.5",
  "log",
  "merge-streams",
+ "regex",
  "solana-account-decoder",
  "solana-logger",
  "solana-sdk",
