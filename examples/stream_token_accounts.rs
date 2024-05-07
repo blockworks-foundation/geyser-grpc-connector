@@ -71,13 +71,15 @@ pub async fn main() {
                         Some(UpdateOneof::Account(update)) => {
                             let account = update.account.unwrap();
                             let account_pk = Pubkey::try_from(account.pubkey).unwrap();
-                            trace!("got account update (green)!!! {} - {:?} - {} bytes",
+                            let size = account.data.len();
+                            info!("got account update (green)!!! {} - {:?} - {} bytes",
                                 update.slot, account_pk, account.data.len());
 
                             if ENABLE_TIMESTAMP_TAGGING {
                                 let since_the_epoch = std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH).expect("Time went backwards");
                                 info!("got account update: write_version={};timestamp_us={};slot={}", account.write_version, since_the_epoch.as_micros(), update.slot);
                             }
+
 
                             match parse_token(&account.data, Some(6)) {
                                 Ok(TokenAccountType::Account(account_ui)) => {
@@ -110,6 +112,10 @@ pub async fn main() {
                                     if account_ui.owner.starts_with("66fEFnKy") {
                                         info!("update balance for mint {} of owner {}: {}", mint, owner, amount);
                                     }
+                                    // if pubkey.starts_with(b"JUP") {
+                                    //     info!("update balance for mint {} of owner {}: {}", mint, owner, amount);
+                                    // }
+
                                     token_account_by_ownermint.entry(owner)
                                         .or_insert_with(DashMap::new)
                                         .insert(mint, account_ui);
@@ -167,9 +173,9 @@ pub fn token_accounts() -> SubscribeRequest {
     accounts_subs.insert(
         "client".to_string(),
         SubscribeRequestFilterAccounts {
-            account: vec![],
-            owner:
-                spl_token_ids().iter().map(|pubkey| pubkey.to_string()).collect(),
+            account: vec!["4DoNfFBfF7UokCC2FQzriy7yHK6DY6NVdYpuekQ5pRgg".to_string()],
+            owner: vec![],
+                // spl_token_ids().iter().map(|pubkey| pubkey.to_string()).collect(),
             filters: vec![],
         },
     );
