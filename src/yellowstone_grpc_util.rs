@@ -1,4 +1,5 @@
 use std::time::Duration;
+use tonic::codec::CompressionEncoding;
 use tonic_health::pb::health_client::HealthClient;
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult, InterceptorXToken};
 use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
@@ -110,6 +111,7 @@ where
     let client = GeyserGrpcClient::new(
         HealthClient::with_interceptor(channel.clone(), interceptor.clone()),
         GeyserClient::with_interceptor(channel, interceptor)
+            .accept_compressed(CompressionEncoding::Gzip)
             .max_decoding_message_size(GeyserGrpcClient::max_decoding_message_size()),
     );
     Ok(client)
