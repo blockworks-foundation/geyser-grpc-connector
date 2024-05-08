@@ -68,19 +68,19 @@ pub async fn main() {
     //     exit_notify.resubscribe(),
     // );
 
-    let _all_accounts = create_geyser_autoconnection_task_with_mpsc(
-        config.clone(),
-        all_accounts(),
-        autoconnect_tx.clone(),
-        exit_notify.resubscribe(),
-    );
-
-    // let _token_accounts_task = create_geyser_autoconnection_task_with_mpsc(
+    // let _all_accounts = create_geyser_autoconnection_task_with_mpsc(
     //     config.clone(),
-    //     token_accounts(),
+    //     all_accounts(),
     //     autoconnect_tx.clone(),
     //     exit_notify.resubscribe(),
     // );
+
+    let _token_accounts_task = create_geyser_autoconnection_task_with_mpsc(
+        config.clone(),
+        token_accounts(),
+        autoconnect_tx.clone(),
+        exit_notify.resubscribe(),
+    );
 
     let current_processed_slot = AtomicSlot::default();
     start_tracking_slots(current_processed_slot.clone());
@@ -282,19 +282,8 @@ pub fn token_accounts() -> SubscribeRequest {
         },
     );
 
-
-    let mut slots_subs = HashMap::new();
-    slots_subs.insert("client".to_string(), SubscribeRequestFilterSlots {
-        filter_by_commitment: Some(true),
-    });
-
-    let mut blocks_meta_subs = HashMap::new();
-    blocks_meta_subs.insert("client".to_string(), SubscribeRequestFilterBlocksMeta {});
-
     SubscribeRequest {
-        slots: slots_subs,
         accounts: accounts_subs,
-        blocks_meta: blocks_meta_subs,
         ..Default::default()
     }
 }
