@@ -23,6 +23,8 @@ use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterBlocksMeta, SubscribeRequestFilterSlots, SubscribeUpdate};
 use yellowstone_grpc_proto::prost::Message as _;
 
+mod debouncer;
+
 #[tokio::main]
 pub async fn main() {
     // RUST_LOG=info,stream_blocks_mainnet=debug,geyser_grpc_connector=trace
@@ -174,6 +176,8 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>, cu
         // wall clock time of block completion (i.e. processed) reported by the block meta stream
         let mut block_completion_notification_time_per_slot = HashMap::<Slot, SystemTime>::new();
 
+        let debouncer = debouncer::Debouncer::new(Duration::from_millis(5));
+
         loop {
             match geyser_messages_rx.recv().await {
                 Some(Message::GeyserSubscribeUpdate(update)) => match update.update_oneof {
@@ -190,7 +194,9 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>, cu
                         if latest_slot != 0 {
                             // the perfect is value "-1"
                             let delta = (latest_slot as i64) - (slot as i64);
-                            debug!("Account info for upcoming slot {} was {} behind current processed slot", slot, delta);
+                            if debouncer.can_fire() {
+                                debug!("Account info for upcoming slot {} was {} behind current processed slot", slot, delta);
+                            }
                         }
 
                         // if account_info.data.len() > 1000 {
