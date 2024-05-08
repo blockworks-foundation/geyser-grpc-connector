@@ -97,15 +97,9 @@ impl GeyserFilter {
         );
 
         SubscribeRequest {
-            slots: HashMap::new(),
-            accounts: Default::default(),
-            transactions: HashMap::new(),
-            entry: Default::default(),
             blocks: blocks_subs,
-            blocks_meta: HashMap::new(),
             commitment: Some(map_commitment_level(self.0) as i32),
-            accounts_data_slice: Default::default(),
-            ping: None,
+            ..Default::default()
         }
     }
 
@@ -114,15 +108,9 @@ impl GeyserFilter {
         blocksmeta_subs.insert("client".to_string(), SubscribeRequestFilterBlocksMeta {});
 
         SubscribeRequest {
-            slots: HashMap::new(),
-            accounts: Default::default(),
-            transactions: HashMap::new(),
-            entry: Default::default(),
-            blocks: HashMap::new(),
             blocks_meta: blocksmeta_subs,
             commitment: Some(map_commitment_level(self.0) as i32),
-            accounts_data_slice: Default::default(),
-            ping: None,
+            ..Default::default()
         }
     }
 
@@ -137,14 +125,8 @@ impl GeyserFilter {
 
         SubscribeRequest {
             slots: slots_subs,
-            accounts: Default::default(),
-            transactions: HashMap::new(),
-            entry: Default::default(),
-            blocks: HashMap::new(),
-            blocks_meta: HashMap::new(),
             commitment: Some(map_commitment_level(self.0) as i32),
-            accounts_data_slice: Default::default(),
-            ping: None,
+            ..Default::default()
         }
     }
 
@@ -160,15 +142,9 @@ impl GeyserFilter {
         );
 
         SubscribeRequest {
-            slots: HashMap::new(),
             accounts: accounts_subs,
-            transactions: HashMap::new(),
-            entry: Default::default(),
-            blocks: Default::default(),
-            blocks_meta: HashMap::new(),
             commitment: Some(map_commitment_level(self.0) as i32),
-            accounts_data_slice: Default::default(),
-            ping: None,
+            ..Default::default()
         }
     }
 }
