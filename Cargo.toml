@@ -33,6 +33,7 @@ csv = "1.3.0"
 
 dashmap = "5.5.3"
 
+tonic = { version="0.10.2", features=["gzip"] }
 tonic-health = "0.10.2"
 regex = "1.10.4"
 clap = { version = "4.2", features = ["derive"] }
