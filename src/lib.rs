@@ -1,6 +1,8 @@
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterBlocks, SubscribeRequestFilterBlocksMeta, SubscribeRequestFilterSlots, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
@@ -14,6 +16,8 @@ pub mod grpcmultiplex_fastestwins;
 mod obfuscate;
 pub mod histogram_percentiles;
 pub mod yellowstone_grpc_util;
+
+pub type AtomicSlot = Arc<AtomicU64>;
 
 // 1-based attempt counter
 type Attempt = u32;
