@@ -68,19 +68,19 @@ pub async fn main() {
     //     exit_notify.resubscribe(),
     // );
 
-    // let _all_accounts = create_geyser_autoconnection_task_with_mpsc(
-    //     config.clone(),
-    //     all_accounts(),
-    //     autoconnect_tx.clone(),
-    //     exit_notify.resubscribe(),
-    // );
-
-    let _token_accounts_task = create_geyser_autoconnection_task_with_mpsc(
+    let _all_accounts = create_geyser_autoconnection_task_with_mpsc(
         config.clone(),
-        token_accounts(),
+        all_accounts(),
         autoconnect_tx.clone(),
         exit_notify.resubscribe(),
     );
+
+    // let _token_accounts_task = create_geyser_autoconnection_task_with_mpsc(
+    //     config.clone(),
+    //     token_accounts(),
+    //     autoconnect_tx.clone(),
+    //     exit_notify.resubscribe(),
+    // );
 
     let current_processed_slot = AtomicSlot::default();
     start_tracking_slots(current_processed_slot.clone());
