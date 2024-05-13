@@ -95,8 +95,11 @@ pub async fn main() {
 // note processed might return a slot that night end up on a fork
 fn start_tracking_slots(current_processed_slot: AtomicSlot) {
 
-    let grpc_slot_source1 = env::var("GRPC_SLOT1_ADDR").expect("need grpc url for green");
-    let grpc_slot_source2 = env::var("GRPC_SLOT2_ADDR").expect("need grpc url for green");
+    let grpc_slot_source1 = env::var("GRPC_SLOT1_ADDR").expect("need grpc url for slot source1");
+    let grpc_x_token_source1 = env::var("GRPC_SLOT1_X_TOKEN").ok();
+
+    let grpc_slot_source2 = env::var("GRPC_SLOT2_ADDR").expect("need grpc url for slot source2");
+    let grpc_x_token_source2 = env::var("GRPC_SLOT2_X_TOKEN").ok();
 
     info!("Using grpc sources for slot: {}, {}",
         grpc_slot_source1, grpc_slot_source2
@@ -109,8 +112,8 @@ fn start_tracking_slots(current_processed_slot: AtomicSlot) {
         receive_timeout: Duration::from_secs(5),
     };
 
-    let config1 = GrpcSourceConfig::new(grpc_slot_source1, None, None, timeouts.clone());
-    let config2 = GrpcSourceConfig::new(grpc_slot_source2, None, None, timeouts.clone());
+    let config1 = GrpcSourceConfig::new(grpc_slot_source1, grpc_x_token_source1, None, timeouts.clone());
+    let config2 = GrpcSourceConfig::new(grpc_slot_source2, grpc_x_token_source2, None, timeouts.clone());
 
 
     tokio::spawn(async move {
