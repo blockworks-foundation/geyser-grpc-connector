@@ -83,7 +83,7 @@ pub async fn main() {
                             let account = update.account.unwrap();
                             let account_pk = Pubkey::try_from(account.pubkey).unwrap();
                             let size = account.data.len() as u64;
-                            trace!("got account update (green)!!! {} - {:?} - {} bytes",
+                            trace!("got account update: {} - {:?} - {} bytes",
                                 update.slot, account_pk, account.data.len());
 
                             if ENABLE_TIMESTAMP_TAGGING {
@@ -137,12 +137,15 @@ pub async fn main() {
                                     updates_per_slot.entry(slot)
                                         .and_modify(|total| *total += 1).or_insert(1);
 
-                                    info!("delta: {}", (slot as i64) - (current_slot as i64));
+                                    let delta = (slot as i64) - (current_slot as i64);
+                                    if delta > 1 {
+                                        info!("delta: {}", (slot as i64) - (current_slot as i64));
+                                    }
 
                                     if slot != changing_slot && changing_slot != 0 {
                                         let total_bytes = bytes_per_slot.get(&changing_slot).unwrap();
                                         let updates_count = updates_per_slot.get(&changing_slot).unwrap();
-                                        // info!("Slot {} - Total bytes: {} in {} updates", slot, total_bytes, updates_count);
+                                        info!("Slot {} - Total bytes: {}, {} updates", slot, total_bytes, updates_count);
                                     }
                                     changing_slot = slot;
 
