@@ -1,11 +1,11 @@
-use crate::{Attempt, GrpcSourceConfig, Message};
+use crate::{yellowstone_grpc_util, Attempt, GrpcSourceConfig, Message};
 use async_stream::stream;
 use futures::{Stream, StreamExt};
 use log::{debug, info, log, trace, warn, Level};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
-use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
+use yellowstone_grpc_client::GeyserGrpcClientResult;
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::Status;
 
@@ -45,14 +45,17 @@ pub fn create_geyser_reconnecting_stream(
                         log!(if attempt > 1 { Level::Warn } else { Level::Debug }, "Connecting attempt #{} to {}", attempt, addr);
                         async move {
 
-                            let connect_result = GeyserGrpcClient::connect_with_timeout(
-                                    addr, token, config,
-                                    connect_timeout,
-                                    request_timeout,
-                                false)
-                                .await;
+                            let buffer_config = yellowstone_grpc_util::GeyserGrpcClientBufferConfig::optimize_for_subscription(&subscribe_filter);
+                            debug!("Using Grpc Buffer config {:?}", buffer_config);
+                            let connect_result = yellowstone_grpc_util::connect_with_timeout_with_buffers(
+                                addr,
+                                token,
+                                config,
+                                connect_timeout,
+                                request_timeout,
+                                buffer_config,
+                            );
                             let mut client = connect_result?;
-
 
                             debug!("Subscribe with filter {:?}", subscribe_filter);
 
