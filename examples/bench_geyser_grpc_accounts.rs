@@ -83,7 +83,7 @@ pub async fn main() {
     // );
 
     let current_processed_slot = AtomicSlot::default();
-    start_tracking_slots(current_processed_slot.clone());
+    // start_tracking_slots(current_processed_slot.clone());
     start_tracking_account_consumer(geyser_messages_rx, current_processed_slot.clone());
 
     // "infinite" sleep
@@ -179,7 +179,7 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>, cu
         // wall clock time of block completion (i.e. processed) reported by the block meta stream
         let mut block_completion_notification_time_per_slot = HashMap::<Slot, SystemTime>::new();
 
-        let debouncer = debouncer::Debouncer::new(Duration::from_millis(5));
+        let debouncer = debouncer::Debouncer::new(Duration::from_millis(50));
 
         loop {
             match geyser_messages_rx.recv().await {
