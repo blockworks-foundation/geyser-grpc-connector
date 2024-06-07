@@ -6,11 +6,13 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
 use std::env;
 use std::pin::pin;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use itertools::Itertools;
 use solana_account_decoder::parse_token::spl_token_ids;
+use solana_sdk::hash::{Hash, hash};
 use tokio::sync::mpsc::Receiver;
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
@@ -173,6 +175,7 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>, cu
         let mut wallclock_updates_per_slot_account = HashMap::<(Slot, Pubkey), Vec<SystemTime>>::new();
         // slot written by account update
         let mut current_slot: Slot = 0;
+        let mut account_hashes = HashMap::<Pubkey, Vec<Hash>>::new();
 
         // seconds since epoch
         let mut block_time_per_slot = HashMap::<Slot, UnixTimestamp>::new();
@@ -180,6 +183,11 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>, cu
         let mut block_completion_notification_time_per_slot = HashMap::<Slot, SystemTime>::new();
 
         let debouncer = debouncer::Debouncer::new(Duration::from_millis(50));
+
+        // Phoenix
+        let selected_account_pk = Pubkey::from_str("4DoNfFBfF7UokCC2FQzriy7yHK6DY6NVdYpuekQ5pRgg").unwrap();
+        let mut last_account_data: Option<Vec<u8>> = None;
+
 
         loop {
             match geyser_messages_rx.recv().await {
@@ -189,15 +197,43 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>, cu
                         let now = SystemTime::now();
                         let account_info = update.account.unwrap();
                         let account_pk = Pubkey::try_from(account_info.pubkey).unwrap();
+                        let account_owner_pk = Pubkey::try_from(account_info.owner).unwrap();
                         // note: slot is referencing the block that is just built while the slot number reported from BlockMeta/Slot uses the slot after the block is built
                         let slot = update.slot;
                         let account_receive_time = get_epoch_sec();
 
+                        if account_info.data.len() > 100000 {
+                            let hash = hash(&account_info.data);
+                            // info!("got account update!!! {} - {:?} - {} bytes - {} - {}lamps",
+                            //     slot, account_pk, account_info.data.len(), hash, account_info.lamports);
 
-                        // if account_info.data.len() > 1000 {
-                        //     trace!("got account update!!! {} - {:?} - {} bytes",
-                        //         slot, account_pk, account_info.data.len());
+                            account_hashes.entry(account_pk)
+                                .and_modify(|entry| entry.push(hash))
+                                .or_insert(vec![hash]);
+                        }
+
+                        // if account_hashes.len() > 100 {
+                        //     for (pubkey, hashes) in &account_hashes {
+                        //         info!("account hashes for {:?}", pubkey);
+                        //         for hash in hashes {
+                        //             info!("- hash: {}", hash);
+                        //         }
+                        //     }
                         // }
+
+                        if account_pk == selected_account_pk {
+                            info!("got account update!!! {} - {:?} - {} bytes - {}",
+                                slot, account_pk, account_info.data.len(), account_info.lamports);
+
+                            if let Some(data) = last_account_data {
+                                let hash1 = hash(&data);
+                                let hash2 = hash(&account_info.data);
+                                info!("diff: {} {}", hash1, hash2);
+                            }
+
+                            last_account_data = Some(account_info.data.clone());
+                        }
+
 
                         bytes_per_slot.entry(slot)
                             .and_modify(|entry| *entry += account_info.data.len())
