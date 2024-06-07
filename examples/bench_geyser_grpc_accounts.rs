@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::collections::{HashMap, VecDeque};
 use futures::{Stream, StreamExt};
 use log::{debug, info};
@@ -225,10 +226,15 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>, cu
                             info!("got account update!!! {} - {:?} - {} bytes - {}",
                                 slot, account_pk, account_info.data.len(), account_info.lamports);
 
-                            if let Some(data) = last_account_data {
-                                let hash1 = hash(&data);
+                            if let Some(prev_data) = last_account_data {
+                                let hash1 = hash(&prev_data);
                                 let hash2 = hash(&account_info.data);
                                 info!("diff: {} {}", hash1, hash2);
+                                
+                                if hash1 != hash2 {
+                                    delta_compress(&prev_data, &account_info.data);
+                                }
+                                
                             }
 
                             last_account_data = Some(account_info.data.clone());
@@ -300,6 +306,28 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>, cu
             }
         }
     });
+}
+
+fn delta_compress(prev_data: &Vec<u8>, data: &Vec<u8>) {
+
+    let xor_region = min(prev_data.len(), data.len());
+    let mut xor_diff = vec![0u8; xor_region];
+
+    for i in 0..xor_region {
+        xor_diff[i] = prev_data[i] ^ data[i];
+    }
+
+    // TODO https://users.rust-lang.org/t/how-to-find-common-prefix-of-two-byte-slices-effectively/25815/3
+    let count_non_zero = xor_diff.iter().filter(|&x| *x != 0).count();
+    info!("count_non_zero={} xor_region={}", count_non_zero, xor_region);
+    // info!("hex {:02X?}", xor_data);
+
+    let compressed_xor = lz4_flex::compress_prepend_size(&xor_diff);
+    info!("compressed size of xor: {} (was {})", compressed_xor.len(), xor_diff.len());
+
+    let compressed_data = lz4_flex::compress_prepend_size(&data);
+    info!("compressed size of data: {} (was {})", compressed_data.len(), data.len());
+
 }
 
 fn get_epoch_sec() -> UnixTimestamp {
