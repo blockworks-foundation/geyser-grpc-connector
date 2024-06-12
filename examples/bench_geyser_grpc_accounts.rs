@@ -5,7 +5,7 @@ use log::{debug, info};
 use solana_sdk::clock::{Slot, UnixTimestamp};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
-use std::env;
+use std::{env, iter};
 use std::pin::pin;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -185,8 +185,10 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>, cu
 
         let debouncer = debouncer::Debouncer::new(Duration::from_millis(50));
 
-        // Phoenix
-        let selected_account_pk = Pubkey::from_str("4DoNfFBfF7UokCC2FQzriy7yHK6DY6NVdYpuekQ5pRgg").unwrap();
+        // Phoenix 4DoNfFBfF7UokCC2FQzriy7yHK6DY6NVdYpuekQ5pRgg
+        // CzK26LWpoU9UjSrZkVu97oZj63abJrNv1zp9Hy2zZdy5
+        // 6ojSigXF7nDPyhFRgmn3V9ywhYseKF9J32ZrranMGVSX
+        // FV8EEHjJvDUD8Kkp1DcomTatZBA81Z6C5AhmvyUwvEAh
         let mut last_account_data: Option<Vec<u8>> = None;
 
 
@@ -231,10 +233,8 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>, cu
                                 let hash2 = hash(&account_info.data);
                                 info!("diff: {} {}", hash1, hash2);
                                 
-                                if hash1 != hash2 {
-                                    delta_compress(&prev_data, &account_info.data);
-                                }
-                                
+                                delta_compress(&prev_data, &account_info.data);
+
                             }
 
                             last_account_data = Some(account_info.data.clone());
@@ -313,11 +313,18 @@ fn delta_compress(prev_data: &Vec<u8>, data: &Vec<u8>) {
     let xor_region = min(prev_data.len(), data.len());
     let mut xor_diff = vec![0u8; xor_region];
 
+    let mut equal = 0;
     for i in 0..xor_region {
         xor_diff[i] = prev_data[i] ^ data[i];
+        equal |= xor_diff[i];
     }
 
-    // TODO https://users.rust-lang.org/t/how-to-find-common-prefix-of-two-byte-slices-effectively/25815/3
+    if equal == 0 && prev_data.len() == data.len() {
+        info!("no difference in data");
+        return;
+    }
+
+
     let count_non_zero = xor_diff.iter().filter(|&x| *x != 0).count();
     info!("count_non_zero={} xor_region={}", count_non_zero, xor_region);
     // info!("hex {:02X?}", xor_data);
