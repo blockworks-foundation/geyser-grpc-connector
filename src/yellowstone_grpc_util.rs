@@ -1,38 +1,41 @@
 use std::time::Duration;
 use tonic_health::pb::health_client::HealthClient;
-use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult, InterceptorXToken};
+use yellowstone_grpc_client::{GeyserGrpcBuilder, GeyserGrpcBuilderError, GeyserGrpcBuilderResult, GeyserGrpcClient, GeyserGrpcClientError, GeyserGrpcClientResult, InterceptorXToken};
 use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
 use yellowstone_grpc_proto::geyser::SubscribeRequest;
 use yellowstone_grpc_proto::prost::bytes::Bytes;
-use yellowstone_grpc_proto::tonic;
-use yellowstone_grpc_proto::tonic::metadata::errors::InvalidMetadataValue;
-use yellowstone_grpc_proto::tonic::metadata::AsciiMetadataValue;
-use yellowstone_grpc_proto::tonic::service::Interceptor;
-use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
+use tonic;
+use tonic::metadata::errors::InvalidMetadataValue;
+use tonic::metadata::AsciiMetadataValue;
+use tonic::service::Interceptor;
+use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 
-pub async fn connect_with_timeout<E, T>(
-    endpoint: E,
-    x_token: Option<T>,
-    tls_config: Option<ClientTlsConfig>,
-    connect_timeout: Option<Duration>,
-    request_timeout: Option<Duration>,
-    connect_lazy: bool,
-) -> GeyserGrpcClientResult<GeyserGrpcClient<impl Interceptor>>
-where
-    E: Into<Bytes>,
-    T: TryInto<AsciiMetadataValue, Error = InvalidMetadataValue>,
-{
-    GeyserGrpcClient::connect_with_timeout(
-        endpoint,
-        x_token,
-        tls_config,
-        connect_timeout,
-        request_timeout,
-        connect_lazy,
-    )
-    .await
-}
 
+
+// pub async fn connect_with_timeout<E, T>(
+//     endpoint: E,
+//     x_token: Option<T>,
+//     tls_config: Option<ClientTlsConfig>,
+//     connect_timeout: Option<Duration>,
+//     request_timeout: Option<Duration>,
+//     connect_lazy: bool,
+// ) -> GeyserGrpcClientResult<GeyserGrpcClient<impl Interceptor>>
+// where
+//     E: Into<Bytes>,
+//     T: TryInto<AsciiMetadataValue, Error = InvalidMetadataValue>,
+// {
+//     GeyserGrpcClient::connect_with_timeout(
+//         endpoint,
+//         x_token,
+//         tls_config,
+//         connect_timeout,
+//         request_timeout,
+//         connect_lazy,
+//     )
+//     .await
+// }
+
+const MAX_DECODING_MESSAGE_SIZE_BYTES: usize = 512_000_000;
 // see https://github.com/hyperium/tonic/blob/v0.10.2/tonic/src/transport/channel/mod.rs
 const DEFAULT_BUFFER_SIZE: usize = 1024;
 // see https://github.com/hyperium/hyper/blob/v0.14.28/src/proto/h2/client.rs#L45
@@ -77,40 +80,34 @@ pub async fn connect_with_timeout_with_buffers<E, T>(
     connect_timeout: Option<Duration>,
     request_timeout: Option<Duration>,
     buffer_config: GeyserGrpcClientBufferConfig,
-) -> GeyserGrpcClientResult<GeyserGrpcClient<impl Interceptor>>
+) -> GeyserGrpcBuilderResult<GeyserGrpcClient<impl Interceptor>>
 where
     E: Into<Bytes>,
     T: TryInto<AsciiMetadataValue, Error = InvalidMetadataValue>,
 {
-    // see https://github.com/blockworks-foundation/geyser-grpc-connector/issues/10
-    let mut endpoint = tonic::transport::Endpoint::from_shared(endpoint)?
-        .buffer_size(buffer_config.buffer_size)
-        .initial_connection_window_size(buffer_config.conn_window)
-        .initial_stream_window_size(buffer_config.stream_window);
+    let builder = GeyserGrpcBuilder::from_shared(endpoint)?;
+
+    let mut builder = builder
+        .buffer_size(buffer_config.buffer_size.unwrap_or(DEFAULT_BUFFER_SIZE))
+        .initial_connection_window_size(buffer_config.conn_window.unwrap_or(DEFAULT_CONN_WINDOW))
+        .initial_stream_window_size(buffer_config.stream_window.unwrap_or(DEFAULT_STREAM_WINDOW));
 
     if let Some(tls_config) = tls_config {
-        endpoint = endpoint.tls_config(tls_config)?;
+        builder = builder.tls_config(tls_config)?;
     }
 
     if let Some(connect_timeout) = connect_timeout {
-        endpoint = endpoint.timeout(connect_timeout);
+        builder = builder.timeout(connect_timeout);
     }
 
     if let Some(request_timeout) = request_timeout {
-        endpoint = endpoint.timeout(request_timeout);
+        builder = builder.timeout(request_timeout);
     }
 
-    let x_token: Option<AsciiMetadataValue> = match x_token {
-        Some(x_token) => Some(x_token.try_into()?),
-        None => None,
-    };
-    let interceptor = InterceptorXToken { x_token };
+    let builder = builder.max_decoding_message_size(MAX_DECODING_MESSAGE_SIZE_BYTES);
 
-    let channel = endpoint.connect_lazy();
-    let client = GeyserGrpcClient::new(
-        HealthClient::with_interceptor(channel.clone(), interceptor.clone()),
-        GeyserClient::with_interceptor(channel, interceptor)
-            .max_decoding_message_size(GeyserGrpcClient::max_decoding_message_size()),
-    );
+    let builder = builder.x_token(x_token)?;
+
+    let client = builder.connect_lazy()?;
     Ok(client)
 }

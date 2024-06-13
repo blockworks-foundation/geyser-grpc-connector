@@ -5,16 +5,28 @@ use log::{debug, info, log, trace, warn, Level};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
-use yellowstone_grpc_client::GeyserGrpcClientResult;
+use tonic::service::Interceptor;
+use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::Status;
+use yellowstone_grpc_client::GeyserGrpcClientError;
+use yellowstone_grpc_client::GeyserGrpcBuilderError;
 use crate::yellowstone_grpc_util::{connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig};
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
     NotConnected(Attempt),
-    Connecting(Attempt, JoinHandle<GeyserGrpcClientResult<S>>),
+    Connecting(Attempt, JoinHandle<GeyserGrpcWrappedResult<S>>),
     Ready(S),
     WaitReconnect(Attempt),
+}
+
+// pub type GeyserGrpcClientResult<T> = Result<T, GeyserGrpcClientError>;
+pub type GeyserGrpcWrappedResult<T> = Result<T, GrpcErrorWrapper>;
+
+#[derive(Debug)]
+enum GrpcErrorWrapper {
+    GrpcClientError(GeyserGrpcClientError),
+    GeyserGrpcBuilderError(GeyserGrpcBuilderError),
 }
 
 // Take geyser filter, connect to Geyser and return a generic stream of SubscribeUpdate
@@ -56,18 +68,30 @@ pub fn create_geyser_reconnecting_stream(
                             )
                             .await;
 
-                            let mut client = connect_result?;
-
+                            let mut client = connect_result
+                                .map_err(|x| GrpcErrorWrapper::GeyserGrpcBuilderError(x))?;
 
                             debug!("Subscribe with filter {:?}", subscribe_filter);
 
-                            let subscribe_result = timeout(subscribe_timeout.unwrap_or(Duration::MAX),
-                                client
-                                    .subscribe_once2(subscribe_filter))
-                            .await;
+                            // let subscribe_result = timeout(subscribe_timeout.unwrap_or(Duration::MAX),
+                            //     client
+                            //         .subscribe_once(subscribe_filter))
+                            // .await;
+
+                            // TODO add timeout
+                            let subscribe_result = client
+                                .subscribe_once(subscribe_filter)
+                                .await;
 
                             // maybe not optimal
-                            subscribe_result.map_err(|_| Status::unknown("unspecific subscribe timeout"))?
+                            // subscribe_result.map_err(|_| Status::unknown("unspecific subscribe timeout"))?
+                            // subscribe_result
+                            //     .map_err(|_| Status::unknown("unspecific subscribe timeout"))
+                            //     .map_err(|tonic_status| GeyserGrpcClientError::TonicStatus(tonic_status))
+                            //     .map_err(|x| GrpcErrorWrapper::GrpcClientError(x))?
+
+                            subscribe_result
+                                .map_err(|x| GrpcErrorWrapper::GrpcClientError(x))
                         }
                     });
 
