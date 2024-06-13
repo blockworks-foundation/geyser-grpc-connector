@@ -11,21 +11,13 @@ use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::Status;
 use yellowstone_grpc_client::GeyserGrpcClientError;
 use yellowstone_grpc_client::GeyserGrpcBuilderError;
-use crate::yellowstone_grpc_util::{connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig};
-
-pub type GeyserGrpcWrappedResult<T> = Result<T, GrpcErrorWrapper>;
+use crate::yellowstone_grpc_util::{connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig, GeyserGrpcWrappedResult, GrpcErrorWrapper};
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
     NotConnected(Attempt),
     Connecting(Attempt, JoinHandle<GeyserGrpcWrappedResult<S>>),
     Ready(S),
     WaitReconnect(Attempt),
-}
-
-#[derive(Debug)]
-enum GrpcErrorWrapper {
-    GrpcClientError(GeyserGrpcClientError),
-    GeyserGrpcBuilderError(GeyserGrpcBuilderError),
 }
 
 // Take geyser filter, connect to Geyser and return a generic stream of SubscribeUpdate

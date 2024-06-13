@@ -12,28 +12,13 @@ use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 
 
 
-// pub async fn connect_with_timeout<E, T>(
-//     endpoint: E,
-//     x_token: Option<T>,
-//     tls_config: Option<ClientTlsConfig>,
-//     connect_timeout: Option<Duration>,
-//     request_timeout: Option<Duration>,
-//     connect_lazy: bool,
-// ) -> GeyserGrpcClientResult<GeyserGrpcClient<impl Interceptor>>
-// where
-//     E: Into<Bytes>,
-//     T: TryInto<AsciiMetadataValue, Error = InvalidMetadataValue>,
-// {
-//     GeyserGrpcClient::connect_with_timeout(
-//         endpoint,
-//         x_token,
-//         tls_config,
-//         connect_timeout,
-//         request_timeout,
-//         connect_lazy,
-//     )
-//     .await
-// }
+pub type GeyserGrpcWrappedResult<T> = Result<T, GrpcErrorWrapper>;
+
+#[derive(Debug)]
+pub enum GrpcErrorWrapper {
+    GrpcClientError(GeyserGrpcClientError),
+    GeyserGrpcBuilderError(GeyserGrpcBuilderError),
+}
 
 const MAX_DECODING_MESSAGE_SIZE_BYTES: usize = 512_000_000;
 // see https://github.com/hyperium/tonic/blob/v0.10.2/tonic/src/transport/channel/mod.rs
