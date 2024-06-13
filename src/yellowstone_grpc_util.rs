@@ -10,8 +10,6 @@ use tonic::metadata::AsciiMetadataValue;
 use tonic::service::Interceptor;
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 
-
-
 pub type GeyserGrpcWrappedResult<T> = Result<T, GrpcErrorWrapper>;
 
 #[derive(Debug)]
@@ -20,7 +18,7 @@ pub enum GrpcErrorWrapper {
     GeyserGrpcBuilderError(GeyserGrpcBuilderError),
 }
 
-const MAX_DECODING_MESSAGE_SIZE_BYTES: usize = 512_000_000;
+const MAX_DECODING_MESSAGE_SIZE_BYTES: usize = 16 * 1024 * 1024;
 // see https://github.com/hyperium/tonic/blob/v0.10.2/tonic/src/transport/channel/mod.rs
 const DEFAULT_BUFFER_SIZE: usize = 1024;
 // see https://github.com/hyperium/hyper/blob/v0.14.28/src/proto/h2/client.rs#L45
@@ -70,9 +68,9 @@ where
     E: Into<Bytes>,
     T: TryInto<AsciiMetadataValue, Error = InvalidMetadataValue>,
 {
-    let builder = GeyserGrpcBuilder::from_shared(endpoint)?;
-
-    let mut builder = builder
+    let mut builder = GeyserGrpcBuilder::from_shared(endpoint)?
+        .x_token(x_token)?
+        .max_decoding_message_size(MAX_DECODING_MESSAGE_SIZE_BYTES)
         .buffer_size(buffer_config.buffer_size.unwrap_or(DEFAULT_BUFFER_SIZE))
         .initial_connection_window_size(buffer_config.conn_window.unwrap_or(DEFAULT_CONN_WINDOW))
         .initial_stream_window_size(buffer_config.stream_window.unwrap_or(DEFAULT_STREAM_WINDOW));
@@ -88,10 +86,6 @@ where
     if let Some(request_timeout) = request_timeout {
         builder = builder.timeout(request_timeout);
     }
-
-    let builder = builder.max_decoding_message_size(MAX_DECODING_MESSAGE_SIZE_BYTES);
-
-    let builder = builder.x_token(x_token)?;
 
     let client = builder.connect_lazy()?;
     Ok(client)
