@@ -189,6 +189,9 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>, cu
         // CzK26LWpoU9UjSrZkVu97oZj63abJrNv1zp9Hy2zZdy5
         // 6ojSigXF7nDPyhFRgmn3V9ywhYseKF9J32ZrranMGVSX
         // FV8EEHjJvDUD8Kkp1DcomTatZBA81Z6C5AhmvyUwvEAh
+        // choose an account for which the diff should be calculated
+        let selected_account_pk = Pubkey::from_str("4DoNfFBfF7UokCC2FQzriy7yHK6DY6NVdYpuekQ5pRgg").unwrap();
+
         let mut last_account_data: Option<Vec<u8>> = None;
 
 
@@ -239,7 +242,6 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>, cu
 
                             last_account_data = Some(account_info.data.clone());
                         }
-
 
                         bytes_per_slot.entry(slot)
                             .and_modify(|entry| *entry += account_info.data.len())
