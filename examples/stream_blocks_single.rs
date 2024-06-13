@@ -73,7 +73,7 @@ pub async fn main() {
     tracing_subscriber::fmt::init();
     // console_subscriber::init();
 
-    let COMMITMENT_LEVEL = CommitmentConfig::processed();
+    const COMMITMENT_LEVEL: CommitmentConfig = CommitmentConfig::processed();
     let grpc_addr_green = env::var("GRPC_ADDR").expect("need grpc url for green");
     let grpc_x_token_green = env::var("GRPC_X_TOKEN").ok();
 

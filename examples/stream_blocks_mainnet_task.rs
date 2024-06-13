@@ -5,9 +5,7 @@ use std::env;
 
 use base64::Engine;
 use itertools::Itertools;
-use solana_sdk::borsh0_10::try_from_slice_unchecked;
 /// This file mocks the core model of the RPC server.
-use solana_sdk::{borsh0_10, borsh0_9, compute_budget};
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::hash::Hash;
 use solana_sdk::instruction::CompiledInstruction;
@@ -118,7 +116,7 @@ pub async fn main() {
         subscribe_timeout: Duration::from_secs(5),
         receive_timeout: Duration::from_secs(5),
     };
-    let (exit_send, exit_notify) = tokio::sync::broadcast::channel(1);
+    let (_exit_send, exit_notify) = tokio::sync::broadcast::channel(1);
 
     let green_config =
         GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());
@@ -271,7 +269,7 @@ pub fn map_produced_block(
                 .iter()
                 .find_map(|i| {
                     if i.program_id(message.static_account_keys())
-                        .eq(&compute_budget::id())
+                        .eq(&solana_sdk::compute_budget::id())
                     {
                         if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
                             solana_sdk::borsh1::try_from_slice_unchecked(i.data.as_slice())
@@ -287,7 +285,7 @@ pub fn map_produced_block(
                 .iter()
                 .find_map(|i| {
                     if i.program_id(message.static_account_keys())
-                        .eq(&compute_budget::id())
+                        .eq(&solana_sdk::compute_budget::id())
                     {
                         if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
                             solana_sdk::borsh1::try_from_slice_unchecked(i.data.as_slice())

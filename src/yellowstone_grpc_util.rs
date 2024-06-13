@@ -1,14 +1,12 @@
 use std::time::Duration;
-use tonic_health::pb::health_client::HealthClient;
 use yellowstone_grpc_client::{GeyserGrpcBuilder, GeyserGrpcBuilderError, GeyserGrpcBuilderResult, GeyserGrpcClient, GeyserGrpcClientError, GeyserGrpcClientResult, InterceptorXToken};
-use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
 use yellowstone_grpc_proto::geyser::SubscribeRequest;
 use yellowstone_grpc_proto::prost::bytes::Bytes;
 use tonic;
 use tonic::metadata::errors::InvalidMetadataValue;
 use tonic::metadata::AsciiMetadataValue;
 use tonic::service::Interceptor;
-use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
+use tonic::transport::ClientTlsConfig;
 
 pub type GeyserGrpcWrappedResult<T> = Result<T, GrpcErrorWrapper>;
 
