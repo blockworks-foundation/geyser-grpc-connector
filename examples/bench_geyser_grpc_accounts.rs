@@ -147,10 +147,13 @@ fn start_tracking_slots(current_processed_slot: AtomicSlot) {
                 Some(Message::GeyserSubscribeUpdate(update)) => match update.update_oneof {
                     Some(UpdateOneof::Slot(update)) => {
                         let slot = update.slot;
-                        if slot > tip {
-                            tip = slot;
-                            current_processed_slot.store(slot, Ordering::Relaxed);
-                        }
+                        current_processed_slot.store(slot, Ordering::Relaxed);
+
+                        // don't do that with the mock impl as the slots restart when mock restarts
+                        // if slot > tip {
+                        //     tip = slot;
+                        //     current_processed_slot.store(slot, Ordering::Relaxed);
+                        // }
                     }
                     None => {}
                     _ => {}
@@ -285,7 +288,6 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>, cu
                         } // -- slot changed
                         current_slot = slot;
 
-
                         let latest_slot = current_processed_slot.load(Ordering::Relaxed);
 
                         if latest_slot != 0 {
@@ -304,7 +306,7 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>, cu
                                     "good"
                                 };
                                 // Account info for upcoming slot {} was {} behind current processed slot
-                                debug!("Update slot {}, delta: {} - {}", slot, delta, info_text);
+                                debug!("Account update slot {}, delta: {} - {}", slot, delta, info_text);
                             }
                         }
 
