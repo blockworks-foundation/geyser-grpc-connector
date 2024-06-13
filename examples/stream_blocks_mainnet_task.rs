@@ -118,7 +118,7 @@ pub async fn main() {
         subscribe_timeout: Duration::from_secs(5),
         receive_timeout: Duration::from_secs(5),
     };
-    let (_, exit_notify) = tokio::sync::broadcast::channel(1);
+    let (exit_send, exit_notify) = tokio::sync::broadcast::channel(1);
 
     let green_config =
         GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());
@@ -144,7 +144,7 @@ pub async fn main() {
         toxiproxy_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
         autoconnect_tx.clone(),
-        exit_notify,
+        exit_notify.resubscribe(),
     );
     start_example_blockmeta_consumer(blockmeta_rx);
 
