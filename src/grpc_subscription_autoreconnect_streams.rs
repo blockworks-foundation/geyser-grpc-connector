@@ -13,15 +13,14 @@ use yellowstone_grpc_client::GeyserGrpcClientError;
 use yellowstone_grpc_client::GeyserGrpcBuilderError;
 use crate::yellowstone_grpc_util::{connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig};
 
+pub type GeyserGrpcWrappedResult<T> = Result<T, GrpcErrorWrapper>;
+
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
     NotConnected(Attempt),
     Connecting(Attempt, JoinHandle<GeyserGrpcWrappedResult<S>>),
     Ready(S),
     WaitReconnect(Attempt),
 }
-
-// pub type GeyserGrpcClientResult<T> = Result<T, GeyserGrpcClientError>;
-pub type GeyserGrpcWrappedResult<T> = Result<T, GrpcErrorWrapper>;
 
 #[derive(Debug)]
 enum GrpcErrorWrapper {
@@ -73,24 +72,16 @@ pub fn create_geyser_reconnecting_stream(
 
                             debug!("Subscribe with filter {:?}", subscribe_filter);
 
-                            // let subscribe_result = timeout(subscribe_timeout.unwrap_or(Duration::MAX),
-                            //     client
-                            //         .subscribe_once(subscribe_filter))
-                            // .await;
-
-                            // TODO add timeout
-                            let subscribe_result = client
-                                .subscribe_once(subscribe_filter)
-                                .await;
-
-                            // maybe not optimal
-                            // subscribe_result.map_err(|_| Status::unknown("unspecific subscribe timeout"))?
-                            // subscribe_result
-                            //     .map_err(|_| Status::unknown("unspecific subscribe timeout"))
-                            //     .map_err(|tonic_status| GeyserGrpcClientError::TonicStatus(tonic_status))
-                            //     .map_err(|x| GrpcErrorWrapper::GrpcClientError(x))?
+                            let subscribe_result = timeout(subscribe_timeout.unwrap_or(Duration::MAX),
+                                client
+                                    .subscribe_once(subscribe_filter))
+                            .await;
 
                             subscribe_result
+                                // maybe not optimal
+                                .map_err(|_| Status::unknown("unspecific subscribe timeout"))
+                                .map_err(|tonic_status| GeyserGrpcClientError::TonicStatus(tonic_status))
+                                .map_err(|tonic_status| GrpcErrorWrapper::GrpcClientError(tonic_status))?
                                 .map_err(|x| GrpcErrorWrapper::GrpcClientError(x))
                         }
                     });
