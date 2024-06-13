@@ -54,6 +54,23 @@ impl GeyserGrpcClientBufferConfig {
     }
 }
 
+
+/*
+async fn create_connection(
+    grpc_config: &GrpcSourceConfig,
+) -> anyhow::Result<GeyserGrpcClient<impl Interceptor + Sized>> {
+    connect_with_timeout_with_buffers(
+        // ...
+    ).await
+    .map_err(|e| {
+        anyhow!("Failed to connect to grpc source: {e:?}")
+    })
+}
+*/
+
+/// This function is used to create a connection to a gRPC server.
+///
+/// Suggest to use `anyhow` to wrap the opaque error type - see create_connection.
 pub async fn connect_with_timeout_with_buffers<E, T>(
     endpoint: E,
     x_token: Option<T>,
