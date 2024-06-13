@@ -86,7 +86,7 @@ pub async fn main() {
     // );
 
     let current_processed_slot = AtomicSlot::default();
-    // start_tracking_slots(current_processed_slot.clone());
+    start_tracking_slots(current_processed_slot.clone());
     start_tracking_account_consumer(geyser_messages_rx, current_processed_slot.clone());
 
     // "infinite" sleep
@@ -292,7 +292,7 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>, cu
                             // the perfect is value "-1"
                             let delta = (latest_slot as i64) - (slot as i64);
                             if debouncer.can_fire() {
-                                debug!("Account info for upcoming slot {} was {} behind current processed slot", slot, delta);
+                                debug!("Account info for upcoming slot {} was {} behind current processed slot (best is -1)", slot, delta);
                             }
                         }
 
