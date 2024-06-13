@@ -292,7 +292,19 @@ fn start_tracking_account_consumer(mut geyser_messages_rx: Receiver<Message>, cu
                             // the perfect is value "-1"
                             let delta = (latest_slot as i64) - (slot as i64);
                             if debouncer.can_fire() {
-                                debug!("Account info for upcoming slot {} was {} behind current processed slot (best is -1)", slot, delta);
+                                let is_lagging = delta > -1;
+                                let is_lagging_a_lot = delta - 20 > -1;
+                                let info_text = if is_lagging {
+                                    if is_lagging_a_lot {
+                                        "A LOT"
+                                    } else {
+                                        "a bit"
+                                    }
+                                } else {
+                                    "good"
+                                };
+                                // Account info for upcoming slot {} was {} behind current processed slot
+                                debug!("Update slot {}, delta: {} - {}", slot, delta, info_text);
                             }
                         }
 
