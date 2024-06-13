@@ -18,12 +18,13 @@ Please open an issue if you have any questions or suggestions ->  [New Issue](ht
 ## Versions
 These are the currently maintained versions of the library
 
-| Tag (geyser-grpc-connector)            | Yellowstone | Solana | Branch                           |
-|----------------------------------------|-------------|--------|----------------------------------|
-| 0.10.x+yellowstone.1.13+solana.1.17.28 | 1.13        | 1.17.28| release/v0.10.x+yellowstone.1.13 |
-| 0.10.x+yellowstone.1.12+solana.1.17.15 | 1.12        | 1.17.15| main                             |
+| Tag (geyser-grpc-connector)            | Yellowstone | Solana  | Branch                           |
+|----------------------------------------|-------------|---------|----------------------------------|
+| 0.10.x+yellowstone.1.13+solana.1.17.28 | 1.13        | 1.17.28 | release/v0.10.x+yellowstone.1.13 |
+| 0.10.x+yellowstone.1.12+solana.1.17.15 | 1.12        | 1.17.15 | main                             |
+| 0.10.x+yellowstone.1.15+solana.1.18    | 1.15        | 1.18.x  | release/v0.10.x+yellowstone.1.15 |
 
-
+* note: Version 1.15 of Yellowstone can replace previous versions of Yellowstone as it is backwards compatible and does not pin the Solana version. (tracked [here](https://github.com/blockworks-foundation/geyser-grpc-connector/issues/12))
 ## Installation and Usage
 
 ```cargo add geyser-grpc-connector ```
