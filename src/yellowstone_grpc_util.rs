@@ -85,6 +85,8 @@ where
 {
     // see https://github.com/blockworks-foundation/geyser-grpc-connector/issues/10
     let mut endpoint = tonic::transport::Endpoint::from_shared(endpoint)?
+        .tcp_nodelay(true)
+        .http2_adaptive_window(true)
         .buffer_size(buffer_config.buffer_size)
         .initial_connection_window_size(buffer_config.conn_window)
         .initial_stream_window_size(buffer_config.stream_window);

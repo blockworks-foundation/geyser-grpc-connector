@@ -1,3 +1,4 @@
+use std::env;
 use std::future::Future;
 use crate::{yellowstone_grpc_util, Attempt, GrpcSourceConfig, Message};
 use futures::{Stream, StreamExt};
@@ -13,7 +14,7 @@ use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientError};
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::service::Interceptor;
 use yellowstone_grpc_proto::tonic::Status;
-use crate::yellowstone_grpc_util::connect_with_timeout_with_buffers;
+use crate::yellowstone_grpc_util::{connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig};
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>, F: Interceptor> {
     NotConnected(Attempt),
@@ -88,7 +89,8 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         addr
                     );
 
-                    let buffer_config = yellowstone_grpc_util::GeyserGrpcClientBufferConfig::optimize_for_subscription(&subscribe_filter);
+                    // let buffer_config = yellowstone_grpc_util::GeyserGrpcClientBufferConfig::optimize_for_subscription(&subscribe_filter);
+                    let buffer_config = buffer_config_from_env();
                     debug!("Using Grpc Buffer config {:?}", buffer_config);
 
                     let connection_handler = |connect_result| match connect_result {
@@ -372,6 +374,23 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
     });
 
     jh_geyser_task
+}
+
+fn buffer_config_from_env() -> GeyserGrpcClientBufferConfig {
+    if env::var("BUFFER_SIZE").is_err() || env::var("CONN_WINDOW").is_err() || env::var("STREAM_WINDOW").is_err() {
+        return GeyserGrpcClientBufferConfig::default();
+    }
+
+    let buffer_size = env::var("BUFFER_SIZE").expect("buffer_size").parse::<usize>().expect("integer(bytes)");
+    let conn_window = env::var("CONN_WINDOW").expect("conn_window").parse::<u32>().expect("integer(bytes)");
+    let stream_window = env::var("STREAM_WINDOW").expect("stream_window").parse::<u32>().expect("integer(bytes)");
+
+    // conn_window should be larger than stream_window
+    GeyserGrpcClientBufferConfig {
+        buffer_size: Some(buffer_size),
+        conn_window: Some(conn_window),
+        stream_window: Some(stream_window),
+    }
 }
 
 
