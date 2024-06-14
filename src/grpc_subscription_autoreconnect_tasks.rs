@@ -378,6 +378,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
 
 fn buffer_config_from_env() -> GeyserGrpcClientBufferConfig {
     if env::var("BUFFER_SIZE").is_err() || env::var("CONN_WINDOW").is_err() || env::var("STREAM_WINDOW").is_err() {
+        warn!("BUFFER_SIZE, CONN_WINDOW, STREAM_WINDOW not set; using default buffer config");
         return GeyserGrpcClientBufferConfig::default();
     }
 
