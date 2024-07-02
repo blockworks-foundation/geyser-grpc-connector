@@ -84,53 +84,23 @@ pub async fn main() {
     );
 
     let timeouts = GrpcConnectionTimeouts {
-        connect_timeout: Duration::from_secs(25),
-        request_timeout: Duration::from_secs(25),
-        subscribe_timeout: Duration::from_secs(25),
-        receive_timeout: Duration::from_secs(25),
+        connect_timeout: Duration::from_secs(15),
+        request_timeout: Duration::from_secs(15),
+        subscribe_timeout: Duration::from_secs(15),
+        receive_timeout: Duration::from_secs(15),
     };
 
     let config = GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());
 
     info!("Write Block stream..");
 
-    let green_stream = create_geyser_reconnecting_stream(
-        config.clone(),
-        GeyserFilter(COMMITMENT_LEVEL).accounts(),
-    );
-
-    let blue_stream = create_geyser_reconnecting_stream(
+    let block_stream = create_geyser_reconnecting_stream(
         config.clone(),
         GeyserFilter(COMMITMENT_LEVEL).blocks_and_txs(),
     );
 
     tokio::spawn(async move {
-        let mut green_stream = pin!(green_stream);
-        while let Some(message) = green_stream.next().await {
-            match message {
-                Message::GeyserSubscribeUpdate(subscriber_update) => {
-                    match subscriber_update.update_oneof {
-                        Some(UpdateOneof::Account(update)) => {
-                            let account_info = update.account.unwrap();
-                            let account_pk = Pubkey::try_from(account_info.pubkey).unwrap();
-                            info!("got account update (green)!!! {} - {:?} - {} bytes",
-                                update.slot, account_pk, account_info.data.len());
-                            let bytes: [u8; 32] =
-                                account_pk.to_bytes();
-                        }
-                        _ => {}
-                    }
-                }
-                Message::Connecting(attempt) => {
-                    warn!("Connection attempt: {}", attempt);
-                }
-            }
-        }
-        warn!("Stream aborted");
-    });
-
-    tokio::spawn(async move {
-        let mut blue_stream = pin!(blue_stream);
+        let mut blue_stream = pin!(block_stream);
         let extractor = BlockMiniExtractor(COMMITMENT_LEVEL);
         while let Some(message) = blue_stream.next().await {
             match message {
