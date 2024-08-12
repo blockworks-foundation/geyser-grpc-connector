@@ -14,13 +14,14 @@ use solana_sdk::pubkey::Pubkey;
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
-use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
+use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, map_commitment_level, Message};
 use tokio::time::{sleep, Duration};
 use tracing::field::debug;
 use tracing::warn;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterSlots, SubscribeUpdate};
 use yellowstone_grpc_proto::prost::Message as _;
+use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
 
 
 const ENABLE_TIMESTAMP_TAGGING: bool = false;
@@ -51,9 +52,21 @@ pub async fn main() {
 
     info!("Write Block stream..");
 
-    let green_stream = create_geyser_reconnecting_stream(
+    let (exit_signal, exit_notify) = tokio::sync::broadcast::channel(1);
+    let (autoconnect_tx, mut accounts_rx) = tokio::sync::mpsc::channel(1000);
+
+    let green_stream = create_geyser_autoconnection_task_with_mpsc(
         config.clone(),
         token_accounts(),
+        autoconnect_tx.clone(),
+        exit_signal.subscribe(),
+    );
+
+    let green_blue = create_geyser_autoconnection_task_with_mpsc(
+        config.clone(),
+        token_accounts_finalized(),
+        autoconnect_tx.clone(),
+        exit_signal.subscribe(),
     );
 
     // owner x mint -> amount
@@ -70,8 +83,7 @@ pub async fn main() {
         let mut current_slot = 0;
 
 
-        let mut green_stream = pin!(green_stream);
-        while let Some(message) = green_stream.next().await {
+        while let Some(message) = accounts_rx.recv().await {
             match message {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
                     match subscriber_update.update_oneof {
@@ -139,7 +151,7 @@ pub async fn main() {
 
                                     let delta = (slot as i64) - (current_slot as i64);
                                     if delta > 1 {
-                                        info!("delta: {}", (slot as i64) - (current_slot as i64));
+                                        debug!("delta: {}", (slot as i64) - (current_slot as i64));
                                     }
 
                                     if slot != changing_slot && changing_slot != 0 {
@@ -198,7 +210,43 @@ pub async fn main() {
     sleep(Duration::from_secs(1800)).await;
 }
 
+
+
 pub fn token_accounts() -> SubscribeRequest {
+    let mut accounts_subs = HashMap::new();
+    accounts_subs.insert(
+        "client".to_string(),
+        SubscribeRequestFilterAccounts {
+            account: vec![],
+            // vec!["4DoNfFBfF7UokCC2FQzriy7yHK6DY6NVdYpuekQ5pRgg".to_string()],
+            owner:
+            spl_token_ids().iter().map(|pubkey| pubkey.to_string()).collect(),
+            filters: vec![],
+        },
+    );
+
+
+    let mut slots_subs = HashMap::new();
+    slots_subs.insert("client".to_string(), SubscribeRequestFilterSlots {
+        filter_by_commitment: Some(true),
+    });
+
+
+    SubscribeRequest {
+        slots: slots_subs,
+        accounts: accounts_subs,
+        transactions: HashMap::new(),
+        entry: Default::default(),
+        blocks: Default::default(),
+        blocks_meta: HashMap::new(),
+        commitment: None,
+        accounts_data_slice: Default::default(),
+        ping: None,
+    }
+}
+
+// find out if fialiized makes a difference wrt accounts
+pub fn token_accounts_finalized() -> SubscribeRequest {
     let mut accounts_subs = HashMap::new();
     accounts_subs.insert(
         "client".to_string(),
@@ -225,7 +273,7 @@ pub fn token_accounts() -> SubscribeRequest {
         entry: Default::default(),
         blocks: Default::default(),
         blocks_meta: HashMap::new(),
-        commitment: None,
+        commitment: Some(map_commitment_level(CommitmentConfig::finalized()).into()),
         accounts_data_slice: Default::default(),
         ping: None,
     }

@@ -157,7 +157,7 @@ impl GeyserFilter {
     }
 }
 
-fn map_commitment_level(commitment_config: CommitmentConfig) -> CommitmentLevel {
+pub fn map_commitment_level(commitment_config: CommitmentConfig) -> CommitmentLevel {
     // solana_sdk -> yellowstone
     match commitment_config.commitment {
         solana_sdk::commitment_config::CommitmentLevel::Processed => {
