@@ -1,3 +1,4 @@
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use futures::{Stream, StreamExt};
 use log::{debug, info, trace};
@@ -7,6 +8,7 @@ use std::env;
 use std::pin::pin;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Instant;
 use dashmap::DashMap;
 use solana_account_decoder::parse_token::{parse_token, spl_token_ids, TokenAccountType, UiTokenAccount};
 use solana_account_decoder::parse_token::UiAccountState::Initialized;
@@ -55,14 +57,14 @@ pub async fn main() {
     let (exit_signal, exit_notify) = tokio::sync::broadcast::channel(1);
     let (autoconnect_tx, mut accounts_rx) = tokio::sync::mpsc::channel(1000);
 
-    let green_stream = create_geyser_autoconnection_task_with_mpsc(
+    let _jh_green = create_geyser_autoconnection_task_with_mpsc(
         config.clone(),
         token_accounts(),
         autoconnect_tx.clone(),
         exit_signal.subscribe(),
     );
 
-    let green_blue = create_geyser_autoconnection_task_with_mpsc(
+    let _jh_blue = create_geyser_autoconnection_task_with_mpsc(
         config.clone(),
         token_accounts_finalized(),
         autoconnect_tx.clone(),
@@ -82,6 +84,8 @@ pub async fn main() {
         let mut changing_slot = 0;
         let mut current_slot = 0;
 
+        let mut account_write_first_timestamp: HashMap<u64, Instant> = HashMap::new();
+
 
         while let Some(message) = accounts_rx.recv().await {
             match message {
@@ -95,6 +99,18 @@ pub async fn main() {
                             let account = update.account.unwrap();
                             let account_pk = Pubkey::try_from(account.pubkey).unwrap();
                             let size = account.data.len() as u64;
+
+                            info!("got account write: {}", account.write_version);
+                            match account_write_first_timestamp.entry(account.write_version) {
+                                Entry::Occupied(o) => {
+                                    let first_timestamp = o.get();
+                                    info!("got second account update for same write version with delta of {:?}", first_timestamp.elapsed());
+                                }
+                                Entry::Vacant(v) => {
+                                    v.insert(Instant::now());
+                                }
+                            }
+
                             trace!("got account update: {} - {:?} - {} bytes",
                                 update.slot, account_pk, account.data.len());
 
@@ -102,7 +118,6 @@ pub async fn main() {
                                 let since_the_epoch = std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH).expect("Time went backwards");
                                 info!("got account update: write_version={};timestamp_us={};slot={}", account.write_version, since_the_epoch.as_micros(), update.slot);
                             }
-
 
                             match parse_token(&account.data, Some(6)) {
                                 Ok(TokenAccountType::Account(account_ui)) => {
@@ -239,7 +254,7 @@ pub fn token_accounts() -> SubscribeRequest {
         entry: Default::default(),
         blocks: Default::default(),
         blocks_meta: HashMap::new(),
-        commitment: None,
+        commitment: Some(map_commitment_level(CommitmentConfig::processed()).into()),
         accounts_data_slice: Default::default(),
         ping: None,
     }
@@ -273,7 +288,7 @@ pub fn token_accounts_finalized() -> SubscribeRequest {
         entry: Default::default(),
         blocks: Default::default(),
         blocks_meta: HashMap::new(),
-        commitment: Some(map_commitment_level(CommitmentConfig::finalized()).into()),
+        commitment: Some(map_commitment_level(CommitmentConfig::confirmed()).into()),
         accounts_data_slice: Default::default(),
         ping: None,
     }
