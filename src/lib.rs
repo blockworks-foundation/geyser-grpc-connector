@@ -2,7 +2,11 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::time::Duration;
-use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterBlocks, SubscribeRequestFilterBlocksMeta, SubscribeRequestFilterSlots, SubscribeUpdate};
+use yellowstone_grpc_proto::geyser::{
+    CommitmentLevel, SubscribeRequest, SubscribeRequestFilterAccounts,
+    SubscribeRequestFilterBlocks, SubscribeRequestFilterBlocksMeta, SubscribeRequestFilterSlots,
+    SubscribeUpdate,
+};
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 
 pub mod channel_plugger;
@@ -149,7 +153,7 @@ impl GeyserFilter {
     }
 }
 
-fn map_commitment_level(commitment_config: CommitmentConfig) -> CommitmentLevel {
+pub fn map_commitment_level(commitment_config: CommitmentConfig) -> CommitmentLevel {
     // solana_sdk -> yellowstone
     match commitment_config.commitment {
         solana_sdk::commitment_config::CommitmentLevel::Processed => {
