@@ -107,7 +107,7 @@ pub async fn main() {
     start_slot_multi_consumer(slots_rx);
 
     // "infinite" sleep
-    sleep(Duration::from_secs(1800)).await;
+    sleep(Duration::from_secs(3600 * 5)).await;
 }
 
 fn slots_all_confirmation_levels() -> SubscribeRequest {
