@@ -1,6 +1,12 @@
 ///
-/// get a sample stream of slots with slot number, parent and status to test logic of chain_data with that
+/// subsribe to grpc in multiple ways:
+/// - all slots and processed accounts in one subscription
+/// - only processed accounts
+/// - only confirmed accounts
+/// - only finalized accounts
 ///
+/// we want to see if there is a difference in timing of "processed accounts" in the mix with slot vs "only processed accounts"
+
 use log::{info, warn};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
