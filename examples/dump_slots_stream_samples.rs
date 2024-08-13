@@ -9,6 +9,7 @@ use std::env;
 use std::time::SystemTime;
 
 use base64::Engine;
+use csv::ReaderBuilder;
 use itertools::Itertools;
 use solana_sdk::borsh0_10::try_from_slice_unchecked;
 /// This file mocks the core model of the RPC server.
@@ -124,4 +125,29 @@ fn slots_all_confirmation_levels() -> SubscribeRequest {
         commitment: None,
         ..Default::default()
     }
+}
+
+#[test]
+fn parse_output() {
+    let data = "283360248,000000000,C,1723558000558";
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(data. as_bytes());
+
+    let all_records = rdr.records().collect_vec();
+    assert_eq!(1, all_records.len());
+    let record = all_records[0].as_ref().unwrap();
+
+    let slot: u64 = record[0].parse().unwrap();
+    let parent: Option<u64> = record[1].parse().ok().and_then(|v| if v == 0 { None } else { Some(v) });
+    let status = match record[2].to_string().as_str() {
+        "P" => CommitmentLevel::Processed,
+        "C" => CommitmentLevel::Confirmed,
+        "F" => CommitmentLevel::Finalized,
+        _ => panic!("invalid commitment level"),
+    };
+
+    assert_eq!(283360248, slot);
+    assert_eq!(None, parent);
+    assert_eq!(CommitmentLevel::Confirmed, status);
 }
