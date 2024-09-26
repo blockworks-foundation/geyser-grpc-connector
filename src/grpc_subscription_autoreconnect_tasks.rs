@@ -1,4 +1,4 @@
-use crate::{Attempt, GrpcSourceConfig, Message};
+use crate::{yellowstone_grpc_util, Attempt, GrpcSourceConfig, Message};
 use futures::{Stream, StreamExt};
 use log::{debug, error, info, log, trace, warn, Level};
 use std::time::Duration;
@@ -75,15 +75,17 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         attempt,
                         addr
                     );
-                    let connect_result = GeyserGrpcClient::connect_with_timeout(
+
+                    let buffer_config = yellowstone_grpc_util::GeyserGrpcClientBufferConfig::optimize_for_subscription(&subscribe_filter);
+                    debug!("Using Grpc Buffer config {:?}", buffer_config);
+                    let connect_result = yellowstone_grpc_util::connect_with_timeout_with_buffers(
                         addr,
                         token,
                         config,
                         connect_timeout,
                         request_timeout,
-                        false,
-                    )
-                    .await;
+                        buffer_config,
+                    );
 
                     match connect_result {
                         Ok(client) => ConnectionState::Connecting(attempt, client),
