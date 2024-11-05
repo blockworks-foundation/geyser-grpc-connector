@@ -2,7 +2,7 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use futures::{Stream, StreamExt};
 use log::{debug, info, trace};
-use solana_sdk::clock::Slot;
+use solana_sdk::clock::{Clock, Slot};
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
 use std::pin::pin;
@@ -13,6 +13,7 @@ use dashmap::DashMap;
 use solana_account_decoder::parse_token::{parse_token, spl_token_ids, TokenAccountType, UiTokenAccount};
 use solana_account_decoder::parse_token::UiAccountState::Initialized;
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::sysvar::clock;
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
@@ -99,6 +100,14 @@ pub async fn main() {
                             let account = update.account.unwrap();
                             let account_pk = Pubkey::try_from(account.pubkey).unwrap();
                             let size = account.data.len() as u64;
+
+                            info!("got account update: {} - {:?} - {} bytes",
+                                update.slot, account_pk, account.data.len());
+
+                            if clock::id() == account_pk {
+                                let clock: Clock = bincode::deserialize(&account.data).unwrap();
+                                info!("clock: {:#?}", clock);
+                            }
 
                             info!("got account write: {}", account.write_version);
                             match account_write_first_timestamp.entry(account.write_version) {
@@ -232,10 +241,10 @@ pub fn token_accounts() -> SubscribeRequest {
     accounts_subs.insert(
         "client".to_string(),
         SubscribeRequestFilterAccounts {
-            account: vec![],
-            // vec!["4DoNfFBfF7UokCC2FQzriy7yHK6DY6NVdYpuekQ5pRgg".to_string()],
-            owner:
-            spl_token_ids().iter().map(|pubkey| pubkey.to_string()).collect(),
+            // account: vec!["4DoNfFBfF7UokCC2FQzriy7yHK6DY6NVdYpuekQ5pRgg".to_string()],
+            account: vec![clock::id().to_string()],
+            owner: vec![],
+            // spl_token_ids().iter().map(|pubkey| pubkey.to_string()).collect(),
             filters: vec![],
         },
     );
@@ -266,8 +275,8 @@ pub fn token_accounts_finalized() -> SubscribeRequest {
     accounts_subs.insert(
         "client".to_string(),
         SubscribeRequestFilterAccounts {
-            account: vec![],
-            // vec!["4DoNfFBfF7UokCC2FQzriy7yHK6DY6NVdYpuekQ5pRgg".to_string()],
+            account:
+            vec!["4DoNfFBfF7UokCC2FQzriy7yHK6DY6NVdYpuekQ5pRgg".to_string()],
             owner:
                 spl_token_ids().iter().map(|pubkey| pubkey.to_string()).collect(),
             filters: vec![],

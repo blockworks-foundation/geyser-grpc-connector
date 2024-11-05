@@ -231,6 +231,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                 ConnectionState::FatalError(_attempt, reason) => match reason {
                     FatalErrorReason::DownstreamChannelClosed => {
                         warn!("downstream closed - aborting");
+                        // TODO break 'main_loop instead of returning
                         return;
                     }
                     FatalErrorReason::ConfigurationError => {

@@ -144,4 +144,3 @@ pub fn transaction_filter() -> SubscribeRequest {
         ping: None,
     }
 }
-
