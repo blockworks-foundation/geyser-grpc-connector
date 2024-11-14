@@ -191,3 +191,20 @@ pub fn all_accounts() -> SubscribeRequest {
         ..Default::default()
     }
 }
+
+
+pub fn slots() -> SubscribeRequest {
+    let mut slots_subs = HashMap::new();
+    slots_subs.insert(
+        "client".to_string(),
+        SubscribeRequestFilterSlots {
+            filter_by_commitment: None,
+        },
+    );
+
+    SubscribeRequest {
+        slots: slots_subs,
+        ..Default::default()
+    }
+}
+
