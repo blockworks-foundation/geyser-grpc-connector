@@ -2,10 +2,11 @@ use futures::{Stream, StreamExt};
 use log::info;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::pubkey::Pubkey;
 use std::env;
 use std::pin::pin;
-use solana_sdk::pubkey::Pubkey;
 
+use csv::Writer;
 use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
@@ -14,7 +15,6 @@ use tracing::warn;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 use yellowstone_grpc_proto::prost::Message as _;
-use csv::Writer;
 
 #[allow(dead_code)]
 fn start_example_blockmini_consumer(
@@ -68,7 +68,7 @@ impl FromYellowstoneExtractor for BlockMiniExtractor {
     }
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 pub async fn main() {
     // RUST_LOG=info,stream_blocks_mainnet=debug,geyser_grpc_connector=trace
     tracing_subscriber::fmt::init();
@@ -114,10 +114,13 @@ pub async fn main() {
                         Some(UpdateOneof::Account(update)) => {
                             let account_info = update.account.unwrap();
                             let account_pk = Pubkey::try_from(account_info.pubkey).unwrap();
-                            info!("got account update (green)!!! {} - {:?} - {} bytes",
-                                update.slot, account_pk, account_info.data.len());
-                            let bytes: [u8; 32] =
-                                account_pk.to_bytes();
+                            info!(
+                                "got account update (green)!!! {} - {:?} - {} bytes",
+                                update.slot,
+                                account_pk,
+                                account_info.data.len()
+                            );
+                            let bytes: [u8; 32] = account_pk.to_bytes();
                         }
                         _ => {}
                     }
@@ -138,7 +141,10 @@ pub async fn main() {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
                     let mapped = extractor.map_yellowstone_update(*subscriber_update);
                     if let Some((slot, block_mini)) = mapped {
-                        info!("got update (blue)!!! block: {} - {} bytes", slot, block_mini.blocksize);
+                        info!(
+                            "got update (blue)!!! block: {} - {} bytes",
+                            slot, block_mini.blocksize
+                        );
                     }
                 }
                 Message::Connecting(attempt) => {

@@ -8,14 +8,14 @@ use std::pin::pin;
 use base64::Engine;
 use itertools::Itertools;
 use solana_sdk::borsh0_10::try_from_slice_unchecked;
-/// This file mocks the core model of the RPC server.
-use solana_sdk::{borsh1, compute_budget};
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::hash::Hash;
 use solana_sdk::instruction::CompiledInstruction;
 use solana_sdk::message::v0::MessageAddressTableLookup;
 use solana_sdk::message::{v0, MessageHeader, VersionedMessage};
 use solana_sdk::pubkey::Pubkey;
+/// This file mocks the core model of the RPC server.
+use solana_sdk::{borsh1, compute_budget};
 
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::TransactionError;
@@ -298,38 +298,32 @@ pub fn map_produced_block(
                     .collect(),
             });
 
-            let cu_requested = message
-                .instructions()
-                .iter()
-                .find_map(|i| {
-                    if i.program_id(message.static_account_keys())
-                        .eq(&compute_budget::id())
+            let cu_requested = message.instructions().iter().find_map(|i| {
+                if i.program_id(message.static_account_keys())
+                    .eq(&compute_budget::id())
+                {
+                    if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
+                        borsh1::try_from_slice_unchecked(i.data.as_slice())
                     {
-                        if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
-                            borsh1::try_from_slice_unchecked(i.data.as_slice())
-                        {
-                            return Some(limit);
-                        }
+                        return Some(limit);
                     }
-                    None
-                });
+                }
+                None
+            });
 
-            let prioritization_fees = message
-                .instructions()
-                .iter()
-                .find_map(|i| {
-                    if i.program_id(message.static_account_keys())
-                        .eq(&compute_budget::id())
+            let prioritization_fees = message.instructions().iter().find_map(|i| {
+                if i.program_id(message.static_account_keys())
+                    .eq(&compute_budget::id())
+                {
+                    if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
+                        borsh1::try_from_slice_unchecked(i.data.as_slice())
                     {
-                        if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
-                            borsh1::try_from_slice_unchecked(i.data.as_slice())
-                        {
-                            return Some(price);
-                        }
+                        return Some(price);
                     }
+                }
 
-                    None
-                });
+                None
+            });
 
             Some(TransactionInfo {
                 signature: signature.to_string(),

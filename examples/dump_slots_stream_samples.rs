@@ -17,7 +17,6 @@ use std::time::SystemTime;
 use base64::Engine;
 use csv::ReaderBuilder;
 use itertools::Itertools;
-use solana_sdk::borsh0_10::try_from_slice_unchecked;
 /// This file mocks the core model of the RPC server.
 use solana_sdk::compute_budget;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
@@ -167,7 +166,7 @@ fn map_slot_status(
         .expect("valid commitment level")
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 pub async fn main() {
     tracing_subscriber::fmt::init();
 

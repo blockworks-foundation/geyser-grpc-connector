@@ -60,7 +60,7 @@ enum TestCases {
 }
 const TEST_CASE: TestCases = TestCases::Basic;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 pub async fn main() {
     // RUST_LOG=info,stream_blocks_mainnet=debug,geyser_grpc_connector=trace
     tracing_subscriber::fmt::init();

@@ -9,8 +9,8 @@ use tokio::time::{sleep, timeout, Instant};
 use yellowstone_grpc_client::{GeyserGrpcBuilderError, GeyserGrpcClient, GeyserGrpcClientError};
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::service::Interceptor;
-use yellowstone_grpc_proto::tonic::Status;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
+use yellowstone_grpc_proto::tonic::Status;
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>, F: Interceptor> {
     NotConnected(Attempt),
@@ -77,11 +77,14 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         addr
                     );
 
-                    let mut builder =  GeyserGrpcClient::build_from_shared(addr).unwrap()
-                        .x_token(token).unwrap()
+                    let mut builder = GeyserGrpcClient::build_from_shared(addr)
+                        .unwrap()
+                        .x_token(token)
+                        .unwrap()
                         .connect_timeout(connect_timeout.unwrap_or(Duration::from_secs(10)))
                         .timeout(request_timeout.unwrap_or(Duration::from_secs(10)))
-                        .tls_config(config.unwrap_or(ClientTlsConfig::new())).unwrap();
+                        .tls_config(config.unwrap_or(ClientTlsConfig::new()))
+                        .unwrap();
 
                     let connect_result = builder.connect().await;
 

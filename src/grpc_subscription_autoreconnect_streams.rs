@@ -7,8 +7,8 @@ use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use yellowstone_grpc_client::{GeyserGrpcBuilder, GeyserGrpcClient, GeyserGrpcClientResult};
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
-use yellowstone_grpc_proto::tonic::Status;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
+use yellowstone_grpc_proto::tonic::Status;
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
     NotConnected(Attempt),
