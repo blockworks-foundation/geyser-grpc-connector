@@ -5,9 +5,10 @@ use log::{debug, info, log, trace, warn, Level};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
-use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
+use yellowstone_grpc_client::{GeyserGrpcBuilder, GeyserGrpcClient, GeyserGrpcClientResult};
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::Status;
+use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
     NotConnected(Attempt),
@@ -45,21 +46,18 @@ pub fn create_geyser_reconnecting_stream(
                         log!(if attempt > 1 { Level::Warn } else { Level::Debug }, "Connecting attempt #{} to {}", attempt, addr);
                         async move {
 
-                            let connect_result = GeyserGrpcClient::connect_with_timeout(
-                                    addr, token, config,
-                                    connect_timeout,
-                                    request_timeout,
-                                false)
-                                .await;
-                            let mut client = connect_result?;
+                            let mut builder =  GeyserGrpcClient::build_from_shared(addr).unwrap()
+                                .x_token(token).unwrap()
+                                .connect_timeout(connect_timeout.unwrap_or(Duration::from_secs(10)))
+                                .timeout(request_timeout.unwrap_or(Duration::from_secs(10)))
+                                .tls_config(config.unwrap_or(ClientTlsConfig::new())).unwrap();
 
+                            let mut client = builder.connect().await.unwrap();
 
                             debug!("Subscribe with filter {:?}", subscribe_filter);
 
                             let subscribe_result = timeout(subscribe_timeout.unwrap_or(Duration::MAX),
-                                client
-                                    .subscribe_once2(subscribe_filter))
-                            .await;
+                                client.subscribe_once(subscribe_filter)).await;
 
                             // maybe not optimal
                             subscribe_result.map_err(|_| Status::unknown("unspecific subscribe timeout"))?

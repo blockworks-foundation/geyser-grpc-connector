@@ -1,7 +1,8 @@
-use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::time::Duration;
+
+use solana_sdk::commitment_config::CommitmentConfig;
 use yellowstone_grpc_proto::geyser::{
     CommitmentLevel, SubscribeRequest, SubscribeRequestFilterAccounts,
     SubscribeRequestFilterBlocks, SubscribeRequestFilterBlocksMeta, SubscribeRequestFilterSlots,
@@ -156,20 +157,8 @@ impl GeyserFilter {
 pub fn map_commitment_level(commitment_config: CommitmentConfig) -> CommitmentLevel {
     // solana_sdk -> yellowstone
     match commitment_config.commitment {
-        solana_sdk::commitment_config::CommitmentLevel::Processed => {
-            yellowstone_grpc_proto::prelude::CommitmentLevel::Processed
-        }
-        solana_sdk::commitment_config::CommitmentLevel::Confirmed => {
-            yellowstone_grpc_proto::prelude::CommitmentLevel::Confirmed
-        }
-        solana_sdk::commitment_config::CommitmentLevel::Finalized => {
-            yellowstone_grpc_proto::prelude::CommitmentLevel::Finalized
-        }
-        _ => {
-            panic!(
-                "unsupported commitment level {}",
-                commitment_config.commitment
-            )
-        }
+        solana_sdk::commitment_config::CommitmentLevel::Processed => CommitmentLevel::Processed,
+        solana_sdk::commitment_config::CommitmentLevel::Confirmed => CommitmentLevel::Confirmed,
+        solana_sdk::commitment_config::CommitmentLevel::Finalized => CommitmentLevel::Finalized,
     }
 }

@@ -9,7 +9,7 @@ use base64::Engine;
 use itertools::Itertools;
 use solana_sdk::borsh0_10::try_from_slice_unchecked;
 /// This file mocks the core model of the RPC server.
-use solana_sdk::compute_budget;
+use solana_sdk::{borsh1, compute_budget};
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::hash::Hash;
 use solana_sdk::instruction::CompiledInstruction;
@@ -268,32 +268,6 @@ pub fn map_produced_block(
                     .collect(),
             });
 
-            let legacy_compute_budget: Option<(u32, Option<u64>)> =
-                message.instructions().iter().find_map(|i| {
-                    if i.program_id(message.static_account_keys())
-                        .eq(&compute_budget::id())
-                    {
-                        if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
-                            units,
-                            additional_fee,
-                        }) = try_from_slice_unchecked(i.data.as_slice())
-                        {
-                            if additional_fee > 0 {
-                                return Some((
-                                    units,
-                                    Some(((units * 1000) / additional_fee) as u64),
-                                ));
-                            } else {
-                                return Some((units, None));
-                            }
-                        }
-                    }
-                    None
-                });
-
-            let legacy_cu_requested = legacy_compute_budget.map(|x| x.0);
-            let legacy_prioritization_fees = legacy_compute_budget.map(|x| x.1).unwrap_or(None);
-
             let cu_requested = message
                 .instructions()
                 .iter()
@@ -302,14 +276,13 @@ pub fn map_produced_block(
                         .eq(&compute_budget::id())
                     {
                         if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
-                            try_from_slice_unchecked(i.data.as_slice())
+                            borsh1::try_from_slice_unchecked(i.data.as_slice())
                         {
                             return Some(limit);
                         }
                     }
                     None
-                })
-                .or(legacy_cu_requested);
+                });
 
             let prioritization_fees = message
                 .instructions()
@@ -319,15 +292,14 @@ pub fn map_produced_block(
                         .eq(&compute_budget::id())
                     {
                         if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
-                            try_from_slice_unchecked(i.data.as_slice())
+                            borsh1::try_from_slice_unchecked(i.data.as_slice())
                         {
                             return Some(price);
                         }
                     }
 
                     None
-                })
-                .or(legacy_prioritization_fees);
+                });
 
             Some(TransactionInfo {
                 signature: signature.to_string(),

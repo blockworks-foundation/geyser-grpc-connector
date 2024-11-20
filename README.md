@@ -23,7 +23,7 @@ These are the currently maintained versions of the library: [see Wiki](https://g
 ```cargo add geyser-grpc-connector ```
 
 
-An example how to use the library is provided in `stream_blocks_mainnet.rs`.
+An example how to use the library is provided in `stream_blocks_mainnet_stream.rs`.
 
 ## Known issues
 * Library does not support other data than Blocks/Slots very well.
