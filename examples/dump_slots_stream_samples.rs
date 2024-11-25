@@ -17,6 +17,7 @@ use std::time::SystemTime;
 use base64::Engine;
 use csv::ReaderBuilder;
 use itertools::Itertools;
+
 /// This file mocks the core model of the RPC server.
 use solana_sdk::compute_budget;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
@@ -28,9 +29,12 @@ use solana_sdk::pubkey::Pubkey;
 
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::TransactionError;
+use tokio::sync::broadcast;
 use tokio::sync::mpsc::Receiver;
+
 use yellowstone_grpc_proto::geyser::{
-    SubscribeRequest, SubscribeRequestFilterSlots, SubscribeUpdateSlot,
+    SubscribeRequest, SubscribeRequestFilterSlots, SubscribeRequestFilterTransactions,
+    SubscribeUpdateSlot,
 };
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
@@ -189,12 +193,15 @@ pub async fn main() {
     let green_config =
         GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());
 
+    let (_, exit_notify) = broadcast::channel(1);
+
     // mix of (all) slots and processed accounts
     let (autoconnect_tx, slots_accounts_rx) = tokio::sync::mpsc::channel(10);
     let _green_stream_ah = create_geyser_autoconnection_task_with_mpsc(
         green_config.clone(),
         all_slots_and_processed_accounts_together(),
         autoconnect_tx.clone(),
+        exit_notify.resubscribe(),
     );
 
     let (only_processed_accounts_tx, only_processed_accounts_rx) = tokio::sync::mpsc::channel(10);
@@ -202,6 +209,7 @@ pub async fn main() {
         green_config.clone(),
         accounts_at_level(CommitmentLevel::Processed),
         only_processed_accounts_tx.clone(),
+        exit_notify.resubscribe(),
     );
 
     let (only_confirmed_accounts_tx, only_confirmed_accounts_rx) = tokio::sync::mpsc::channel(10);
@@ -209,6 +217,7 @@ pub async fn main() {
         green_config.clone(),
         accounts_at_level(CommitmentLevel::Confirmed),
         only_confirmed_accounts_tx.clone(),
+        exit_notify.resubscribe(),
     );
 
     let (only_finalized_accounts_tx, only_finalized_accounts_rx) = tokio::sync::mpsc::channel(10);
@@ -216,6 +225,7 @@ pub async fn main() {
         green_config.clone(),
         accounts_at_level(CommitmentLevel::Finalized),
         only_finalized_accounts_tx.clone(),
+        exit_notify.resubscribe(),
     );
 
     start_all_slots_and_processed_accounts_consumer(slots_accounts_rx);

@@ -2,6 +2,7 @@ use log::info;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
+use tokio::sync::broadcast;
 
 use geyser_grpc_connector::channel_plugger::spawn_broadcast_channel_plug;
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task;
@@ -87,9 +88,12 @@ pub async fn main() {
 
     info!("Write Block stream..");
 
+    let (_, exit_notify) = broadcast::channel(1);
+
     let (jh_geyser_task, message_channel) = create_geyser_autoconnection_task(
         green_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_and_txs(),
+        exit_notify,
     );
     let mut message_channel =
         spawn_broadcast_channel_plug(tokio::sync::broadcast::channel(8), message_channel);

@@ -1,9 +1,7 @@
-use futures::Stream;
 use log::{info, warn};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
-use std::pin::pin;
 
 use base64::Engine;
 use itertools::Itertools;
@@ -22,12 +20,8 @@ use solana_sdk::transaction::TransactionError;
 use tokio::sync::mpsc::Receiver;
 use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
 
-use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::{
-    create_geyser_autoconnection_task, create_geyser_autoconnection_task_with_mpsc,
-};
-use geyser_grpc_connector::grpcmultiplex_fastestwins::{
-    create_multiplexed_stream, FromYellowstoneExtractor,
-};
+use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
+use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
@@ -124,6 +118,7 @@ pub async fn main() {
         subscribe_timeout: Duration::from_secs(5),
         receive_timeout: Duration::from_secs(5),
     };
+    let (_, exit_notify) = tokio::sync::broadcast::channel(1);
 
     let green_config =
         GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());
@@ -137,16 +132,19 @@ pub async fn main() {
         green_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
         autoconnect_tx.clone(),
+        exit_notify.resubscribe(),
     );
     let _blue_stream_ah = create_geyser_autoconnection_task_with_mpsc(
         blue_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
         autoconnect_tx.clone(),
+        exit_notify.resubscribe(),
     );
     let _toxiproxy_stream_ah = create_geyser_autoconnection_task_with_mpsc(
         toxiproxy_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
         autoconnect_tx.clone(),
+        exit_notify,
     );
     start_example_blockmeta_consumer(blockmeta_rx);
 

@@ -85,10 +85,10 @@ pub async fn main() {
     );
 
     let timeouts = GrpcConnectionTimeouts {
-        connect_timeout: Duration::from_secs(5),
-        request_timeout: Duration::from_secs(5),
-        subscribe_timeout: Duration::from_secs(5),
-        receive_timeout: Duration::from_secs(5),
+        connect_timeout: Duration::from_secs(25),
+        request_timeout: Duration::from_secs(25),
+        subscribe_timeout: Duration::from_secs(25),
+        receive_timeout: Duration::from_secs(25),
     };
 
     let config = GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());

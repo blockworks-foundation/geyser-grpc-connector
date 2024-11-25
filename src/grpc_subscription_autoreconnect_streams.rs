@@ -1,14 +1,18 @@
-use crate::{Attempt, GrpcSourceConfig, Message};
+use std::time::Duration;
+
 use async_stream::stream;
 use futures::{Stream, StreamExt};
 use log::{debug, info, log, trace, warn, Level};
-use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
-use yellowstone_grpc_client::{GeyserGrpcBuilder, GeyserGrpcClient, GeyserGrpcClientResult};
+use yellowstone_grpc_client::GeyserGrpcClientResult;
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
-use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 use yellowstone_grpc_proto::tonic::Status;
+
+use crate::yellowstone_grpc_util::{
+    connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig,
+};
+use crate::{Attempt, GrpcSourceConfig, Message};
 
 enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
     NotConnected(Attempt),
@@ -46,14 +50,17 @@ pub fn create_geyser_reconnecting_stream(
                         log!(if attempt > 1 { Level::Warn } else { Level::Debug }, "Connecting attempt #{} to {}", attempt, addr);
                         async move {
 
-                            let mut builder =  GeyserGrpcClient::build_from_shared(addr).unwrap()
-                                .x_token(token).unwrap()
-                                .connect_timeout(connect_timeout.unwrap_or(Duration::from_secs(10)))
-                                .timeout(request_timeout.unwrap_or(Duration::from_secs(10)))
-                                .tls_config(config.unwrap_or(ClientTlsConfig::new())).unwrap();
+                            let connect_result = connect_with_timeout_with_buffers(
+                                addr,
+                                token,
+                                config,
+                                connect_timeout,
+                                request_timeout,
+                                GeyserGrpcClientBufferConfig::optimize_for_subscription(&subscribe_filter),
+                            )
+                            .await;
 
-                            let mut client = builder.connect().await.unwrap();
-
+                            let mut client = connect_result.unwrap(); // FIXME how to handle this?
                             debug!("Subscribe with filter {:?}", subscribe_filter);
 
                             let subscribe_result = timeout(subscribe_timeout.unwrap_or(Duration::MAX),
@@ -130,8 +137,9 @@ pub fn create_geyser_reconnecting_stream(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::GrpcConnectionTimeouts;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_debug_no_secrets() {
@@ -148,7 +156,7 @@ mod tests {
                     "http://localhost:1234".to_string(),
                     Some("my-secret".to_string()),
                     None,
-                    timeout_config
+                    timeout_config,
                 )
             ),
             "grpc_addr http://localhost:1234"
@@ -170,7 +178,7 @@ mod tests {
                     "http://localhost:1234".to_string(),
                     Some("my-secret".to_string()),
                     None,
-                    timeout_config
+                    timeout_config,
                 )
             ),
             "grpc_addr http://localhost:1234"

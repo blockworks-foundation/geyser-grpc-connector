@@ -12,13 +12,12 @@ repository = "https://github.com/blockworks-foundation/geyser-grpc-connector"
 yellowstone-grpc-client = { version = "2.0.0", git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v2.0.0+solana.2.0.16" }
 yellowstone-grpc-proto = { version = "2.0.0", git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v2.0.0+solana.2.0.16" }
 
-
 # required for CommitmentConfig
 solana-sdk = "2.0.16"
 
 url = "2.5.0"
 async-stream = "0.3.5"
-tokio = { version = "1.28" , features = ["rt"] }
+tokio = { version = "1.28" , features = ["rt", "rt-multi-thread"] }
 futures = "0.3.28"
 merge-streams = "0.1.2"
 anyhow = "1.0.70"
@@ -32,9 +31,19 @@ bincode = "1.3.3"
 
 csv = "1.3.0"
 
-#[dev-dependencies]
+dashmap = "5.5.3"
+
+tonic = { version= "0.12.3", features=["gzip"] }
+tonic-health = "0.12.3"
+regex = "1.10.4"
+clap = { version = "4.2", features = ["derive"] }
+
+lz4_flex = "0.11.3"
+
+[dev-dependencies]
 tracing-subscriber = "0.3.16"
 solana-logger = "2.0.16"
+solana-account-decoder = "2.0.16"
 
 [patch.crates-io.curve25519-dalek]
 git = "https://github.com/anza-xyz/curve25519-dalek.git"
