@@ -16,13 +16,7 @@ The implementation is based on _Rust Futures_.
 Please open an issue if you have any questions or suggestions ->  [New Issue](https://github.com/blockworks-foundation/geyser-grpc-connector/issues/new).
 
 ## Versions
-These are the currently maintained versions of the library
-
-| Tag (geyser-grpc-connector)            | Yellowstone | Solana | Branch                           |
-|----------------------------------------|-------------|--------|----------------------------------|
-| 0.10.x+yellowstone.1.13+solana.1.17.28 | 1.13        | 1.17.28| release/v0.10.x+yellowstone.1.13 |
-| 0.10.x+yellowstone.1.12+solana.1.17.15 | 1.12        | 1.17.15| main                             |
-
+These are the currently maintained versions of the library: [see Wiki](https://github.com/blockworks-foundation/geyser-grpc-connector/wiki)
 
 ## Installation and Usage
 
