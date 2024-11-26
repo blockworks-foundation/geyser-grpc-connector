@@ -155,7 +155,7 @@ fn start_tracking_slots(current_processed_slot: AtomicSlot) {
             exit_notify.resubscribe(),
         );
 
-        let mut tip: Slot = 0;
+        // let mut tip: Slot = 0;
 
         loop {
             match multiplex_rx.recv().await {
@@ -199,8 +199,6 @@ fn start_tracking_account_consumer(
 
         // seconds since epoch
         let mut block_time_per_slot = HashMap::<Slot, UnixTimestamp>::new();
-        // wall clock time of block completion (i.e. processed) reported by the block meta stream
-        let mut block_completion_notification_time_per_slot = HashMap::<Slot, SystemTime>::new();
 
         let debouncer = debouncer::Debouncer::new(Duration::from_millis(50));
 
@@ -218,11 +216,10 @@ fn start_tracking_account_consumer(
             match geyser_messages_rx.recv().await {
                 Some(Message::GeyserSubscribeUpdate(update)) => match update.update_oneof {
                     Some(UpdateOneof::Account(update)) => {
-                        let started_at = Instant::now();
                         let now = SystemTime::now();
                         let account_info = update.account.unwrap();
                         let account_pk = Pubkey::try_from(account_info.pubkey).unwrap();
-                        let account_owner_pk = Pubkey::try_from(account_info.owner).unwrap();
+                        let _account_owner_pk = Pubkey::try_from(account_info.owner).unwrap();
                         // note: slot is referencing the block that is just built while the slot number reported from BlockMeta/Slot uses the slot after the block is built
                         let slot = update.slot;
                         let account_receive_time = get_epoch_sec();

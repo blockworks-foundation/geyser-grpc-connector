@@ -153,5 +153,6 @@ pub fn transaction_filter() -> SubscribeRequest {
         commitment: None,
         accounts_data_slice: Default::default(),
         ping: None,
+        transactions_status: Default::default(),
     }
 }

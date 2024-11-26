@@ -60,7 +60,7 @@ pub async fn main() {
 
     info!("Write Block stream..");
 
-    let (exit_signal, exit_notify) = tokio::sync::broadcast::channel(1);
+    let (exit_signal, _exit_notify) = tokio::sync::broadcast::channel(1);
     let (autoconnect_tx, mut accounts_rx) = tokio::sync::mpsc::channel(1000);
 
     let _jh_green = create_geyser_autoconnection_task_with_mpsc(
@@ -167,7 +167,7 @@ pub async fn main() {
                                     // }
                                     // all different states are covered
                                     // is_native: both true+false are sent
-                                    assert_eq!(account.executable, false);
+                                    assert!(!account.executable);
                                     assert_eq!(account.rent_epoch, u64::MAX);
 
                                     let owner = Pubkey::from_str(&account_ui.owner).unwrap();
@@ -217,7 +217,7 @@ pub async fn main() {
                                     }
                                     changing_slot = slot;
                                 }
-                                Ok(TokenAccountType::Mint(mint)) => {
+                                Ok(TokenAccountType::Mint(_mint)) => {
                                     // not interesting
                                 }
                                 Ok(TokenAccountType::Multisig(_)) => {}
@@ -229,8 +229,6 @@ pub async fn main() {
                                     );
                                 }
                             }
-
-                            let bytes: [u8; 32] = account_pk.to_bytes();
                         }
                         _ => {}
                     }
@@ -249,7 +247,7 @@ pub async fn main() {
             for accounts_by_mint in token_account_by_ownermint_read.iter() {
                 for token_account_mint in accounts_by_mint.iter() {
                     total += 1;
-                    let (owner, mint, account) = (
+                    let (_owner, _mint, _account) = (
                         accounts_by_mint.key(),
                         token_account_mint.key(),
                         token_account_mint.value(),
@@ -297,6 +295,7 @@ pub fn token_accounts() -> SubscribeRequest {
         commitment: Some(map_commitment_level(CommitmentConfig::processed()).into()),
         accounts_data_slice: Default::default(),
         ping: None,
+        transactions_status: Default::default(),
     }
 }
 
@@ -333,5 +332,6 @@ pub fn token_accounts_finalized() -> SubscribeRequest {
         commitment: Some(map_commitment_level(CommitmentConfig::confirmed()).into()),
         accounts_data_slice: Default::default(),
         ping: None,
+        transactions_status: Default::default(),
     }
 }

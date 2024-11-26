@@ -1,23 +1,25 @@
-use futures::{Stream, StreamExt};
-use log::info;
-use solana_sdk::clock::Slot;
-use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
 use std::pin::pin;
 
 use base64::Engine;
+use futures::{Stream, StreamExt};
 use itertools::Itertools;
+use log::info;
+use solana_sdk::clock::Slot;
+use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::hash::Hash;
 use solana_sdk::instruction::CompiledInstruction;
 use solana_sdk::message::v0::MessageAddressTableLookup;
 use solana_sdk::message::{v0, MessageHeader, VersionedMessage};
 use solana_sdk::pubkey::Pubkey;
-/// This file mocks the core model of the RPC server.
-use solana_sdk::{borsh1, compute_budget};
-
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::TransactionError;
+/// This file mocks the core model of the RPC server.
+use solana_sdk::{borsh1, compute_budget};
+use tokio::time::{sleep, Duration};
+use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
+use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
@@ -25,9 +27,6 @@ use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
 };
 use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
-use tokio::time::{sleep, Duration};
-use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 
 pub mod debouncer;
 
@@ -218,21 +217,10 @@ pub fn map_produced_block(
         .transactions
         .into_iter()
         .filter_map(|tx| {
-            let Some(meta) = tx.meta else {
-                return None;
-            };
-
-            let Some(transaction) = tx.transaction else {
-                return None;
-            };
-
-            let Some(message) = transaction.message else {
-                return None;
-            };
-
-            let Some(header) = message.header else {
-                return None;
-            };
+            let meta = tx.meta?;
+            let transaction = tx.transaction?;
+            let message = transaction.message?;
+            let header = message.header?;
 
             let signatures = transaction
                 .signatures

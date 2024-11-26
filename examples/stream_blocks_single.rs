@@ -74,7 +74,7 @@ pub async fn main() {
     tracing_subscriber::fmt::init();
     // console_subscriber::init();
 
-    let COMMITMENT_LEVEL = CommitmentConfig::processed();
+    let commitment_level = CommitmentConfig::processed();
     let grpc_addr_green = env::var("GRPC_ADDR").expect("need grpc url for green");
     let grpc_x_token_green = env::var("GRPC_X_TOKEN").ok();
 
@@ -97,12 +97,12 @@ pub async fn main() {
 
     let green_stream = create_geyser_reconnecting_stream(
         config.clone(),
-        GeyserFilter(COMMITMENT_LEVEL).accounts(),
+        GeyserFilter(commitment_level).accounts(),
     );
 
     let blue_stream = create_geyser_reconnecting_stream(
         config.clone(),
-        GeyserFilter(COMMITMENT_LEVEL).blocks_and_txs(),
+        GeyserFilter(commitment_level).blocks_and_txs(),
     );
 
     tokio::spawn(async move {
@@ -120,7 +120,6 @@ pub async fn main() {
                                 account_pk,
                                 account_info.data.len()
                             );
-                            let bytes: [u8; 32] = account_pk.to_bytes();
                         }
                         _ => {}
                     }
@@ -135,7 +134,7 @@ pub async fn main() {
 
     tokio::spawn(async move {
         let mut blue_stream = pin!(blue_stream);
-        let extractor = BlockMiniExtractor(COMMITMENT_LEVEL);
+        let extractor = BlockMiniExtractor(commitment_level);
         while let Some(message) = blue_stream.next().await {
             match message {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {

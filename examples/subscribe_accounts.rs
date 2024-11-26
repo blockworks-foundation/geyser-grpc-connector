@@ -83,15 +83,13 @@ pub async fn main() {
 // note: this keeps track of lot of data and might blow up memory
 fn start_tracking_account_consumer(
     mut geyser_messages_rx: Receiver<Message>,
-    current_processed_slot: Arc<AtomicU64>,
+    _current_processed_slot: Arc<AtomicU64>,
 ) {
     tokio::spawn(async move {
         loop {
             match geyser_messages_rx.recv().await {
                 Some(Message::GeyserSubscribeUpdate(update)) => match update.update_oneof {
                     Some(UpdateOneof::Account(update)) => {
-                        let started_at = Instant::now();
-                        let now = SystemTime::now();
                         let account_info = update.account.unwrap();
                         let account_pk = Pubkey::try_from(account_info.pubkey).unwrap();
                         let account_owner_pk = Pubkey::try_from(account_info.owner).unwrap();
