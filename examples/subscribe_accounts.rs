@@ -4,38 +4,25 @@
 // ```
 //
 
-use futures::{Stream, StreamExt};
-use itertools::Itertools;
-use log::{debug, info};
+use log::info;
 use solana_account_decoder::parse_token::spl_token_ids;
-use solana_sdk::clock::{Slot, UnixTimestamp};
-use solana_sdk::commitment_config::CommitmentConfig;
-use solana_sdk::hash::{hash, Hash};
+use solana_sdk::clock::UnixTimestamp;
 use solana_sdk::pubkey::Pubkey;
-use std::cmp::min;
-use std::collections::{HashMap, VecDeque};
-use std::pin::pin;
-use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::collections::HashMap;
+use std::env;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use std::{env, iter};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::Receiver;
 
-use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
-use geyser_grpc_connector::grpcmultiplex_fastestwins::{
-    create_multiplexed_stream, FromYellowstoneExtractor,
-};
-use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
+use geyser_grpc_connector::{GrpcConnectionTimeouts, GrpcSourceConfig, Message};
 use tokio::time::{sleep, Duration};
-use tracing::{trace, warn};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{
     SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterBlocksMeta,
-    SubscribeRequestFilterSlots, SubscribeUpdate,
+    SubscribeRequestFilterSlots,
 };
-use yellowstone_grpc_proto::prost::Message as _;
 
 type AtomicSlot = Arc<AtomicU64>;
 

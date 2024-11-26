@@ -1,7 +1,6 @@
 use dashmap::DashMap;
-use futures::{Stream, StreamExt};
 use log::{debug, info, trace};
-use solana_account_decoder::parse_token::UiAccountState::Initialized;
+#[allow(deprecated)]
 use solana_account_decoder::parse_token::{
     parse_token, spl_token_ids, TokenAccountType, UiTokenAccount,
 };
@@ -12,25 +11,20 @@ use solana_sdk::sysvar::clock;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::env;
-use std::pin::pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 
-use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
-use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 use geyser_grpc_connector::{
-    map_commitment_level, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message,
+    map_commitment_level, GrpcConnectionTimeouts, GrpcSourceConfig, Message,
 };
 use tokio::time::{sleep, Duration};
-use tracing::field::debug;
 use tracing::warn;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{
-    SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterSlots, SubscribeUpdate,
+    SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterSlots,
 };
-use yellowstone_grpc_proto::prost::Message as _;
 
 const ENABLE_TIMESTAMP_TAGGING: bool = false;
 
@@ -147,6 +141,7 @@ pub async fn main() {
                                 );
                             }
 
+                            #[allow(deprecated)]
                             match parse_token(&account.data, Some(6)) {
                                 Ok(TokenAccountType::Account(account_ui)) => {
                                     // UiTokenAccount {
@@ -187,7 +182,7 @@ pub async fn main() {
 
                                     token_account_by_ownermint
                                         .entry(owner)
-                                        .or_insert_with(DashMap::new)
+                                        .or_default()
                                         .insert(mint, account_ui);
 
                                     bytes_per_slot

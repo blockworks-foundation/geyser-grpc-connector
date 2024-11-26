@@ -4,8 +4,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io;
 use std::io::BufRead;
-use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::path::PathBuf;
 
 pub fn parse_log_entry_subscriber(log_entry: &str) -> (u64, u64) {
     let re = Regex::new(r".*got account update: write_version=(?P<write_version>\d+);timestamp_us=(?P<timestamp_us>\d+);slot=(?P<slot>\d+)").unwrap();
@@ -85,6 +84,7 @@ fn read_from_csv(csv_file: PathBuf) -> HashMap<u64, u64> {
         .collect::<HashMap<u64, u64>>()
 }
 
+#[allow(dead_code)]
 fn read_subscriber_log_csv(csv_file: PathBuf) -> HashMap<u64, u64> {
     csv::ReaderBuilder::new()
         .delimiter(b';')

@@ -12,13 +12,13 @@ pub fn main() {
     let reader = io::BufReader::new(file);
     for blocks in &reader.lines().chunks(9) {
         let blocks = blocks.collect_vec();
-        let account_pk = blocks[0].as_ref().unwrap().replace(":", "");
-        if account_pk == "" {
+        let account_pk = blocks[0].as_ref().unwrap().replace(':', "");
+        if account_pk.is_empty() {
             break;
         }
         let owner_pk = blocks[2].as_ref().unwrap();
-        let ltick = owner_pk.find("'");
-        let rtick = owner_pk.rfind("'");
+        let ltick = owner_pk.find('\'');
+        let rtick = owner_pk.rfind('\'');
         let owner_pk = &owner_pk[ltick.unwrap() + 1..rtick.unwrap()];
 
         let data_len = blocks[6].as_ref().unwrap().replace("  data_len: ", "");

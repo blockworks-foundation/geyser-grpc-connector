@@ -20,6 +20,7 @@ pub struct BlockMini {
     pub commitment_config: CommitmentConfig,
 }
 
+#[allow(dead_code)]
 struct BlockMiniExtractor(CommitmentConfig);
 
 impl FromYellowstoneExtractor for BlockMiniExtractor {

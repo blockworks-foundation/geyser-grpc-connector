@@ -32,3 +32,6 @@ impl Debouncer {
         results.is_ok()
     }
 }
+
+#[allow(dead_code)]
+fn main() {}

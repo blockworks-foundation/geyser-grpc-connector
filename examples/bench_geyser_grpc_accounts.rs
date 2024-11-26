@@ -1,4 +1,3 @@
-use futures::{Stream, StreamExt};
 use itertools::Itertools;
 use log::{debug, info};
 use solana_account_decoder::parse_token::spl_token_ids;
@@ -7,32 +6,25 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::hash::{hash, Hash};
 use solana_sdk::pubkey::Pubkey;
 use std::cmp::min;
-use std::collections::{HashMap, VecDeque};
-use std::pin::pin;
+use std::collections::HashMap;
+use std::env;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use std::{env, iter};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::Receiver;
 
-use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
-use geyser_grpc_connector::grpcmultiplex_fastestwins::{
-    create_multiplexed_stream, FromYellowstoneExtractor,
-};
 use geyser_grpc_connector::{
     histogram_percentiles, AtomicSlot, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig,
     Message,
 };
 use tokio::time::{sleep, Duration};
-use tracing::{trace, warn};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{
     SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterBlocksMeta,
-    SubscribeRequestFilterSlots, SubscribeUpdate,
+    SubscribeRequestFilterSlots,
 };
-use yellowstone_grpc_proto::prost::Message as _;
 
 mod debouncer;
 
@@ -198,7 +190,7 @@ fn start_tracking_account_consumer(
         let mut account_hashes = HashMap::<Pubkey, Vec<Hash>>::new();
 
         // seconds since epoch
-        let mut block_time_per_slot = HashMap::<Slot, UnixTimestamp>::new();
+        let block_time_per_slot = HashMap::<Slot, UnixTimestamp>::new();
 
         let debouncer = debouncer::Debouncer::new(Duration::from_millis(50));
 
@@ -367,7 +359,7 @@ fn start_tracking_account_consumer(
     });
 }
 
-fn delta_compress(prev_data: &Vec<u8>, data: &Vec<u8>) {
+fn delta_compress(prev_data: &[u8], data: &[u8]) {
     let xor_region = min(prev_data.len(), data.len());
     let mut xor_diff = vec![0u8; xor_region];
 
@@ -396,7 +388,7 @@ fn delta_compress(prev_data: &Vec<u8>, data: &Vec<u8>) {
         xor_diff.len()
     );
 
-    let compressed_data = lz4_flex::compress_prepend_size(&data);
+    let compressed_data = lz4_flex::compress_prepend_size(data);
     info!(
         "compressed size of data: {} (was {})",
         compressed_data.len(),

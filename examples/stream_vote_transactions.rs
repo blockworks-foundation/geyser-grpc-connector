@@ -1,38 +1,20 @@
-use dashmap::DashMap;
-use futures::{Stream, StreamExt};
+use futures::StreamExt;
 use itertools::Itertools;
-use log::{debug, info, trace};
-use solana_account_decoder::parse_token::UiAccountState::Initialized;
-use solana_account_decoder::parse_token::{
-    parse_token, spl_token_ids, TokenAccountType, UiTokenAccount,
-};
+use log::info;
 use solana_sdk::clock::{Slot, UnixTimestamp};
-use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::program_utils::limited_deserialize;
-use solana_sdk::pubkey::Pubkey;
 use solana_sdk::vote::instruction::VoteInstruction;
-use solana_sdk::vote::state::Vote;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::pin::pin;
-use std::str::FromStr;
-use std::sync::Arc;
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
-use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 use geyser_grpc_connector::histogram_percentiles::calculate_percentiles;
-use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
+use geyser_grpc_connector::{GrpcConnectionTimeouts, GrpcSourceConfig, Message};
 use tokio::time::{sleep, Duration};
-use tracing::field::debug;
 use tracing::warn;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::geyser::{
-    SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterSlots,
-    SubscribeRequestFilterTransactions, SubscribeUpdate,
-};
-use yellowstone_grpc_proto::prost::Message as _;
-
-const ENABLE_TIMESTAMP_TAGGING: bool = false;
+use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterTransactions};
 
 #[tokio::main]
 pub async fn main() {
@@ -67,6 +49,7 @@ pub async fn main() {
 
         let mut green_stream = pin!(green_stream);
         while let Some(message) = green_stream.next().await {
+            #[allow(clippy::single_match)]
             match message {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
                     match subscriber_update.update_oneof {
@@ -91,7 +74,7 @@ pub async fn main() {
                                 );
                                 vote_times_by_slot
                                     .entry(last_voted_slot)
-                                    .or_insert(HashSet::new())
+                                    .or_default()
                                     .insert(vote_instruction.timestamp().unwrap());
                             }
 

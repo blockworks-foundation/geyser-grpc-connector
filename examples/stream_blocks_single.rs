@@ -6,7 +6,6 @@ use solana_sdk::pubkey::Pubkey;
 use std::env;
 use std::pin::pin;
 
-use csv::Writer;
 use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
@@ -108,6 +107,7 @@ pub async fn main() {
     tokio::spawn(async move {
         let mut green_stream = pin!(green_stream);
         while let Some(message) = green_stream.next().await {
+            #[allow(clippy::single_match)]
             match message {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
                     match subscriber_update.update_oneof {
@@ -158,6 +158,7 @@ pub async fn main() {
     sleep(Duration::from_secs(1800)).await;
 }
 
+#[allow(dead_code)]
 fn map_block_update(update: SubscribeUpdate) -> Option<Slot> {
     match update.update_oneof {
         Some(UpdateOneof::Block(update_block_message)) => {
