@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use tonic::codec::CompressionEncoding;
 use tonic::metadata::errors::InvalidMetadataValue;
 use tonic::metadata::AsciiMetadataValue;
 use tonic::service::Interceptor;
@@ -115,7 +114,8 @@ where
     let client = GeyserGrpcClient::new(
         HealthClient::with_interceptor(channel.clone(), interceptor.clone()),
         GeyserClient::with_interceptor(channel, interceptor)
-            .accept_compressed(CompressionEncoding::Gzip)
+            // DISALLOW GRPC - benching shows that it is slow
+            // .accept_compressed(CompressionEncoding::Gzip)
             .max_decoding_message_size(usize::MAX),
     );
     Ok(client)

@@ -3906,7 +3906,6 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "bytes",
- "flate2",
  "h2 0.4.7",
  "http 1.1.0",
  "http-body 1.0.1",
