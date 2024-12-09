@@ -70,6 +70,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
     // read this for argument: http://www.randomhacks.net/2019/03/08/should-rust-channels-panic-on-send/
 
     // task will be aborted when downstream receiver gets dropped
+    // there are two ways to terminate: 1) using break 'main_loop 2) return from task
     let jh_geyser_task = tokio::spawn(async move {
         let mut state = ConnectionState::NotConnected(1);
         let mut messages_forwarded = 0;
@@ -220,7 +221,6 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                 ConnectionState::FatalError(_attempt, reason) => match reason {
                     FatalErrorReason::DownstreamChannelClosed => {
                         warn!("downstream closed - aborting");
-                        // TODO break 'main_loop instead of returning
                         return;
                     }
                     FatalErrorReason::ConfigurationError => {
@@ -361,6 +361,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                 }
             } // -- END match
         } // -- state loop; break ONLY on graceful shutdown
+        debug!("gracefully exiting geyser task loop");
     });
 
     jh_geyser_task
