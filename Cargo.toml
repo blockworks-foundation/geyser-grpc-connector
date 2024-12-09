@@ -9,6 +9,7 @@ authors = ["GroovieGermanikus <groovie@mango.markets>"]
 repository = "https://github.com/blockworks-foundation/geyser-grpc-connector"
 
 [dependencies]
+# note: as timewriting there are versions 3.0.0 and 4.0.0; we will come back to that later
 yellowstone-grpc-client = { version = "2.0.0", git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v2.0.0+solana.2.0.16" }
 yellowstone-grpc-proto = { version = "2.0.0", git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v2.0.0+solana.2.0.16" }
 
