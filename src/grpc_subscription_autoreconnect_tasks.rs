@@ -259,33 +259,6 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                     let receive_timeout = grpc_source.timeouts.as_ref().map(|t| t.receive_timeout);
                     'recv_loop: loop {
 
-                        if started_at.elapsed() > Duration::from_secs(10) {
-                            warn!("EXPERIMENTAL: reconnect with different filter");
-
-                            let mut sub_accounts = HashMap::new();
-                            sub_accounts.insert("all_accounts".to_string(),
-                                                SubscribeRequestFilterAccounts {
-                                                    account: vec![],
-                                                    owner: vec![],
-                                                    filters: vec![],
-                                                });
-
-                            let updated_filter = SubscribeRequest {
-                                slots: Default::default(),
-                                // ALL
-                                accounts: sub_accounts,
-                                ..Default::default()
-                            };
-                            subscribe_tx.send(updated_filter).await.unwrap();
-
-                            started_at = Instant::now();
-                            break 'recv_loop ConnectionState::Ready(geyser_stream, subscribe_tx);
-                        }
-
-                        // let fut_stream = timeout(
-                        //     receive_timeout.unwrap_or(Duration::MAX),
-                        //     geyser_stream.next(),
-                        // );
 
                         select! {
                              exit_res = exit_notify.recv() => {
@@ -301,6 +274,32 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                     }
                                 }
                                 break 'recv_loop ConnectionState::GracefulShutdown;
+                            },
+                            client_subscribe_update = client_subscribe_rx.recv() => {
+                                match client_subscribe_update {
+                                    Some(subscribe_request) => {
+                                        debug!("> client subscribe update {:?}", subscribe_request);
+                                        let fut_send = subscribe_tx.send(subscribe_request);
+                                        let MaybeExit::Continue(filter_subscribe_result) =
+                                            await_or_exit(fut_send, exit_notify.recv()).await
+                                        else {
+                                            break 'recv_loop ConnectionState::GracefulShutdown;
+                                        };
+
+                                        // let MaybeExit::Continue(()) =
+                                        //     await_or_exit(fut_send, exit_notify.recv()).await
+                                        // else {
+                                        //     break 'recv_loop ConnectionState::GracefulShutdown;
+                                        // };
+                                    }
+                                    None => {
+                                        warn!("client subscribe channel closed - aborting");
+                                        break 'recv_loop ConnectionState::FatalError(
+                                            0,
+                                            FatalErrorReason::DownstreamChannelClosed,
+                                        );
+                                    }
+                                }
                             },
                             geyser_stream_res = timeout(
                                     receive_timeout.unwrap_or(Duration::MAX),
@@ -404,9 +403,6 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                 }; // -- END match
 
                             },
-                            update = client_subscribe_rx.recv() => {
-
-                            }
                         }
 
 

@@ -10,10 +10,11 @@ use solana_sdk::clock::UnixTimestamp;
 use solana_sdk::pubkey::Pubkey;
 use std::collections::HashMap;
 use std::env;
+use std::str::FromStr;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
 use geyser_grpc_connector::{GrpcConnectionTimeouts, GrpcSourceConfig, Message};
@@ -53,12 +54,14 @@ pub async fn main() {
     let (autoconnect_tx, geyser_messages_rx) = tokio::sync::mpsc::channel(10);
     let (_exit_tx, exit_rx) = tokio::sync::broadcast::channel::<()>(1);
 
-    let _all_accounts = create_geyser_autoconnection_task_with_mpsc(
+    let (_jh, client_subscribe_tx) = create_geyser_autoconnection_task_with_mpsc(
         config.clone(),
-        all_accounts(),
+        jito2_account(),
         autoconnect_tx.clone(),
         exit_rx.resubscribe(),
     );
+
+    spawn_subscribe_filter_updater(client_subscribe_tx.clone());
 
     let current_processed_slot = AtomicSlot::default();
     start_tracking_account_consumer(geyser_messages_rx, current_processed_slot.clone());
@@ -98,6 +101,20 @@ fn start_tracking_account_consumer(
                 }
                 Some(Message::Connecting(_)) => {}
             }
+        }
+    });
+}
+
+
+fn spawn_subscribe_filter_updater(client_subscribe_tx: Sender<SubscribeRequest>) {
+    tokio::spawn(async move {
+        loop {
+            sleep(Duration::from_secs(5)).await;
+            info!("updating filters");
+            client_subscribe_tx
+                .send(jito1_account())
+                .await
+                .expect("send");
         }
     });
 }
@@ -176,6 +193,50 @@ pub fn all_accounts() -> SubscribeRequest {
         ..Default::default()
     }
 }
+
+pub fn jito1_account() -> SubscribeRequest {
+
+    // Jito1
+    let account = Pubkey::from_str("CXPeim1wQMkcTvEHx9QdhgKREYYJD8bnaCCqPRwJ1to1").unwrap();
+
+    let mut accounts_subs = HashMap::new();
+    accounts_subs.insert(
+        "client".to_string(),
+        SubscribeRequestFilterAccounts {
+            account: vec![account.to_string()],
+            owner: vec![],
+            filters: vec![],
+        },
+    );
+
+    SubscribeRequest {
+        accounts: accounts_subs,
+        ..Default::default()
+    }
+}
+
+
+pub fn jito2_account() -> SubscribeRequest {
+
+    // Jito2
+    let account = Pubkey::from_str("A4hyMd3FyvUJSRafDUSwtLLaQcxRP4r1BRC9w2AJ1to2").unwrap();
+
+    let mut accounts_subs = HashMap::new();
+    accounts_subs.insert(
+        "client".to_string(),
+        SubscribeRequestFilterAccounts {
+            account: vec![account.to_string()],
+            owner: vec![],
+            filters: vec![],
+        },
+    );
+
+    SubscribeRequest {
+        accounts: accounts_subs,
+        ..Default::default()
+    }
+}
+
 
 pub fn slots() -> SubscribeRequest {
     let mut slots_subs = HashMap::new();
