@@ -4,8 +4,8 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::{Sink, SinkExt, Stream, StreamExt};
 use futures::channel::mpsc::SendError;
+use futures::{Sink, SinkExt, Stream, StreamExt};
 use log::{debug, error, info, log, trace, warn, Level};
 use tokio::select;
 use tokio::sync::broadcast;
@@ -15,7 +15,9 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout, Instant};
 use yellowstone_grpc_client::{GeyserGrpcBuilderError, GeyserGrpcClient, GeyserGrpcClientError};
-use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeUpdate};
+use yellowstone_grpc_proto::geyser::{
+    SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeUpdate,
+};
 use yellowstone_grpc_proto::tonic::service::Interceptor;
 use yellowstone_grpc_proto::tonic::Status;
 
@@ -24,7 +26,11 @@ use crate::yellowstone_grpc_util::{
 };
 use crate::{Attempt, GrpcSourceConfig, Message};
 
-enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>, F: Interceptor, R: Sink<SubscribeRequest, Error = futures::channel::mpsc::SendError>> {
+enum ConnectionState<
+    S: Stream<Item = Result<SubscribeUpdate, Status>>,
+    F: Interceptor,
+    R: Sink<SubscribeRequest, Error = futures::channel::mpsc::SendError>,
+> {
     NotConnected(Attempt),
     // connected but not subscribed
     Connecting(Attempt, GeyserGrpcClient<F>),
@@ -53,14 +59,14 @@ pub fn create_geyser_autoconnection_task(
     let (sender, receiver_channel) = tokio::sync::mpsc::channel::<Message>(1);
 
     // TODO rename
-    let (join_handle, subscribe_tx) = create_geyser_autoconnection_task_with_mpsc(
+    let (join_handle, client_subscribe_tx) = create_geyser_autoconnection_task_with_mpsc(
         grpc_source,
         subscribe_filter,
         sender,
         exit_notify,
     );
 
-    (join_handle, receiver_channel, subscribe_tx)
+    (join_handle, receiver_channel, client_subscribe_tx)
 }
 
 /// connect to grpc source performing autoconnect if required,
@@ -73,11 +79,14 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
     mut exit_notify: broadcast::Receiver<()>,
 ) -> (JoinHandle<()>, Sender<SubscribeRequest>) {
     // read this for argument: http://www.randomhacks.net/2019/03/08/should-rust-channels-panic-on-send/
-    let (client_subscribe_tx, mut client_subscribe_rx) = tokio::sync::mpsc::channel::<SubscribeRequest>(1);
+    let (client_subscribe_tx, mut client_subscribe_rx) =
+        tokio::sync::mpsc::channel::<SubscribeRequest>(1);
 
     // task will be aborted when downstream receiver gets dropped
     // there are two ways to terminate: 1) using break 'main_loop 2) return from task
     let jh_geyser_task = tokio::spawn(async move {
+        // use this filter for initial connect and update it if the client requests a change via client_subscribe_tx channel
+        let mut subscribe_filter_on_connect = subscribe_filter;
         let mut state = ConnectionState::NotConnected(1);
         let mut messages_forwarded = 0;
 
@@ -153,12 +162,12 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                 ConnectionState::Connecting(attempt, mut client) => {
                     let subscribe_timeout =
                         grpc_source.timeouts.as_ref().map(|t| t.subscribe_timeout);
-                    let subscribe_filter = subscribe_filter.clone();
-                    debug!("Subscribe with filter {:?}", subscribe_filter);
+                    let subscribe_filter_on_connect = subscribe_filter_on_connect.clone();
+                    debug!("Subscribe initially with filter {:?}", subscribe_filter_on_connect);
 
                     let fut_subscribe = timeout(
                         subscribe_timeout.unwrap_or(Duration::MAX),
-                        client.subscribe_with_request(Some(subscribe_filter)),
+                        client.subscribe_with_request(Some(subscribe_filter_on_connect)),
                     );
 
                     match await_or_exit(fut_subscribe, exit_notify.recv()).await {
@@ -166,15 +175,17 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                             match subscribe_result_timeout {
                                 Ok(subscribe_result) => {
                                     match subscribe_result {
-                                        // TODO rename
-                                        Ok((subscribe_tx, geyser_stream)) => {
+                                        Ok((geyser_subscribe_tx, geyser_stream)) => {
                                             if attempt > 1 {
                                                 debug!(
-                                                    "subscribed to {} after {} failed attempts",
+                                                    "Subscribed to {} after {} failed attempts",
                                                     grpc_source, attempt
                                                 );
                                             }
-                                            ConnectionState::Ready(geyser_stream, subscribe_tx)
+                                            ConnectionState::Ready(
+                                                geyser_stream,
+                                                geyser_subscribe_tx,
+                                            )
                                         }
                                         Err(GeyserGrpcClientError::TonicStatus(_)) => {
                                             warn!(
@@ -198,9 +209,9 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                 }
                                 Err(_elapsed) => {
                                     warn!(
-                                    "subscribe failed with timeout on {} - retrying",
-                                    grpc_source
-                                );
+                                        "subscribe failed with timeout on {} - retrying",
+                                        grpc_source
+                                    );
                                     ConnectionState::RecoverableConnectionError(attempt + 1)
                                 }
                             }
@@ -254,12 +265,9 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         MaybeExit::Exit => ConnectionState::GracefulShutdown,
                     }
                 }
-                ConnectionState::Ready(mut geyser_stream, mut subscribe_tx) => {
-                    let mut started_at = Instant::now();
+                ConnectionState::Ready(mut geyser_stream, mut geyser_subscribe_tx) => {
                     let receive_timeout = grpc_source.timeouts.as_ref().map(|t| t.receive_timeout);
                     'recv_loop: loop {
-
-
                         select! {
                              exit_res = exit_notify.recv() => {
                                 match exit_res {
@@ -278,26 +286,21 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                             client_subscribe_update = client_subscribe_rx.recv() => {
                                 match client_subscribe_update {
                                     Some(subscribe_request) => {
-                                        debug!("> client subscribe update {:?}", subscribe_request);
-                                        let fut_send = subscribe_tx.send(subscribe_request);
-                                        let MaybeExit::Continue(filter_subscribe_result) =
+                                        debug!("Subscription update from client with filter {:?}", subscribe_request);
+                                        subscribe_filter_on_connect = subscribe_request.clone();
+                                        // note: if the subscription is invalid, it will trigger a Tonic error:
+                                        //  Status { code: InvalidArgument, message: "failed to create filter: Invalid Base58 string", source: None }
+                                        let fut_send = geyser_subscribe_tx.send(subscribe_request);
+                                        let MaybeExit::Continue(send_result) =
                                             await_or_exit(fut_send, exit_notify.recv()).await
                                         else {
-                                            break 'recv_loop ConnectionState::GracefulShutdown;
+                                            warn!("fail to send subscription update - disconnect and retry");
+                                            break 'recv_loop ConnectionState::WaitReconnect(1);
                                         };
-
-                                        // let MaybeExit::Continue(()) =
-                                        //     await_or_exit(fut_send, exit_notify.recv()).await
-                                        // else {
-                                        //     break 'recv_loop ConnectionState::GracefulShutdown;
-                                        // };
                                     }
                                     None => {
-                                        warn!("client subscribe channel closed - aborting");
-                                        break 'recv_loop ConnectionState::FatalError(
-                                            0,
-                                            FatalErrorReason::DownstreamChannelClosed,
-                                        );
+                                        trace!("client subscribe channel closed, continue without");
+                                        continue 'recv_loop;
                                     }
                                 }
                             },
@@ -389,7 +392,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                     }
                                     Ok(Some(Err(tonic_status))) => {
                                         // all tonic errors are recoverable
-                                        warn!("error on {} - retrying: {:?}", grpc_source, tonic_status);
+                                        warn!("tonic error on {} - retrying: {:?}", grpc_source, tonic_status);
                                         break 'recv_loop ConnectionState::WaitReconnect(1);
                                     }
                                     Ok(None) => {
@@ -404,8 +407,6 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
 
                             },
                         }
-
-
                     } // -- END receive loop
                 }
                 ConnectionState::GracefulShutdown => {

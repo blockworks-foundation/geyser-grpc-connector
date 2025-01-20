@@ -14,6 +14,7 @@ use std::env;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::mpsc::Sender;
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
 use geyser_grpc_connector::{
@@ -57,14 +58,14 @@ pub async fn main() {
     let (exit_signal, _exit_notify) = tokio::sync::broadcast::channel(1);
     let (autoconnect_tx, mut accounts_rx) = tokio::sync::mpsc::channel(1000);
 
-    let _jh_green = create_geyser_autoconnection_task_with_mpsc(
+    let (_jh_green, client_subscribe_tx) = create_geyser_autoconnection_task_with_mpsc(
         config.clone(),
         token_accounts(),
         autoconnect_tx.clone(),
         exit_signal.subscribe(),
     );
 
-    let _jh_blue = create_geyser_autoconnection_task_with_mpsc(
+    let (_jh_blue, _) = create_geyser_autoconnection_task_with_mpsc(
         config.clone(),
         token_accounts_finalized(),
         autoconnect_tx.clone(),

@@ -3,6 +3,7 @@ use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
 use tokio::sync::broadcast;
+use tokio::sync::mpsc::Sender;
 
 use geyser_grpc_connector::channel_plugger::spawn_broadcast_channel_plug;
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task;
@@ -11,7 +12,7 @@ use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConf
 use tokio::time::{sleep, Duration};
 use tracing::warn;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::geyser::SubscribeUpdate;
+use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
 use yellowstone_grpc_proto::prost::Message as _;
 
 pub struct BlockMini {
@@ -91,7 +92,7 @@ pub async fn main() {
 
     let (_, exit_notify) = broadcast::channel(1);
 
-    let (jh_geyser_task, message_channel, _subscribe_tx) = create_geyser_autoconnection_task(
+    let (jh_geyser_task, message_channel, client_subscribe_tx) = create_geyser_autoconnection_task(
         green_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_and_txs(),
         exit_notify,
