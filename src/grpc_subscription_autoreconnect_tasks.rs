@@ -77,8 +77,6 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
         let mut state = ConnectionState::NotConnected(1);
         let mut messages_forwarded = 0;
 
-        let mut subscribe_filter = subscribe_filter.clone();
-
         'main_loop: loop {
             state = match state {
                 ConnectionState::NotConnected(attempt) => {
@@ -161,7 +159,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
 
                     match await_or_exit(fut_subscribe, exit_notify.recv()).await {
                         MaybeExit::Continue(subscribe_result_timeout) => {
-                            (|subscribe_result_timeout| match subscribe_result_timeout {
+                            match subscribe_result_timeout {
                                 Ok(subscribe_result) => {
                                     match subscribe_result {
                                         Ok(geyser_stream) => {
@@ -200,7 +198,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                 );
                                     ConnectionState::RecoverableConnectionError(attempt + 1)
                                 }
-                            })(subscribe_result_timeout)
+                            }
                         }
                         MaybeExit::Exit => ConnectionState::GracefulShutdown,
                     }
@@ -251,7 +249,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         MaybeExit::Exit => ConnectionState::GracefulShutdown,
                     }
                 }
-                ConnectionState::Ready(mut geyser_stream, client) => {
+                ConnectionState::Ready(mut geyser_stream, mut client) => {
                     let mut started_at = Instant::now();
                     let receive_timeout = grpc_source.timeouts.as_ref().map(|t| t.receive_timeout);
                     'recv_loop: loop {
@@ -263,23 +261,47 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         if started_at.elapsed() > Duration::from_secs(10) {
                             warn!("EXPERIMENTAL: reconnect with different filter");
 
+
+
+                            for _i in 0..10 {
+                                let mut sub_accounts = HashMap::new();
+                                sub_accounts.insert("all_accounts".to_string(),
+                                                    SubscribeRequestFilterAccounts {
+                                                        account: vec![],
+                                                        owner: vec![],
+                                                        filters: vec![],
+                                                    });
+                                let updated_filter = SubscribeRequest {
+                                    slots: Default::default(),
+                                    // ALL
+                                    accounts: sub_accounts,
+                                    ..Default::default()
+                                };
+                                let _foo = client.subscribe_once(updated_filter).await.unwrap();
+
+
+                            }
+
                             let mut sub_accounts = HashMap::new();
                             sub_accounts.insert("all_accounts".to_string(),
-                                        SubscribeRequestFilterAccounts {
-                                            account: vec![],
-                                            owner: vec![],
-                                            filters: vec![],
-                                        });
-                            
-                            subscribe_filter = SubscribeRequest {
+                                                SubscribeRequestFilterAccounts {
+                                                    account: vec![],
+                                                    owner: vec![],
+                                                    filters: vec![],
+                                                });
+
+                            let updated_filter = SubscribeRequest {
                                 slots: Default::default(),
                                 // ALL
                                 accounts: sub_accounts,
                                 ..Default::default()
                             };
-                            
+
+
+                            let updated_sub = client.subscribe_once(updated_filter).await.unwrap();
+
                             started_at = Instant::now();
-                            break 'recv_loop ConnectionState::Ready(geyser_stream, client);
+                            break 'recv_loop ConnectionState::Ready(updated_sub, client);
                         }
 
                         let MaybeExit::Continue(geyser_stream_res) =
