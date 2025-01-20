@@ -91,7 +91,7 @@ pub async fn main() {
 
     let (_, exit_notify) = broadcast::channel(1);
 
-    let (jh_geyser_task, message_channel) = create_geyser_autoconnection_task(
+    let (jh_geyser_task, message_channel, _subscribe_tx) = create_geyser_autoconnection_task(
         green_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_and_txs(),
         exit_notify,

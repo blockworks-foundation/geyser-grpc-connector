@@ -10,7 +10,7 @@ use log::{debug, error, info, log, trace, warn, Level};
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc::error::SendTimeoutError;
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout, Instant};
 use yellowstone_grpc_client::{GeyserGrpcBuilderError, GeyserGrpcClient, GeyserGrpcClientError};
@@ -48,17 +48,17 @@ pub fn create_geyser_autoconnection_task(
     grpc_source: GrpcSourceConfig,
     subscribe_filter: SubscribeRequest,
     exit_notify: broadcast::Receiver<()>,
-) -> (JoinHandle<()>, Receiver<Message>) {
+) -> (JoinHandle<()>, Receiver<Message>, Sender<SubscribeRequest>) {
     let (sender, receiver_channel) = tokio::sync::mpsc::channel::<Message>(1);
 
-    let join_handle = create_geyser_autoconnection_task_with_mpsc(
+    let (join_handle, subscribe_tx) = create_geyser_autoconnection_task_with_mpsc(
         grpc_source,
         subscribe_filter,
         sender,
         exit_notify,
     );
 
-    (join_handle, receiver_channel)
+    (join_handle, receiver_channel, subscribe_tx)
 }
 
 /// connect to grpc source performing autoconnect if required,
@@ -69,9 +69,9 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
     subscribe_filter: SubscribeRequest,
     mpsc_downstream: tokio::sync::mpsc::Sender<Message>,
     mut exit_notify: broadcast::Receiver<()>,
-) -> JoinHandle<()> {
+) -> (JoinHandle<()>, Sender<SubscribeRequest>) {
     // read this for argument: http://www.randomhacks.net/2019/03/08/should-rust-channels-panic-on-send/
-
+    let (subscribe_tx, subscribe_rx) = tokio::sync::mpsc::channel::<SubscribeRequest>(1);
 
     // task will be aborted when downstream receiver gets dropped
     // there are two ways to terminate: 1) using break 'main_loop 2) return from task
@@ -390,7 +390,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
         debug!("gracefully exiting geyser task loop");
     });
 
-    jh_geyser_task
+    (jh_geyser_task, subscribe_tx)
 }
 
 fn buffer_config_from_env() -> GeyserGrpcClientBufferConfig {
