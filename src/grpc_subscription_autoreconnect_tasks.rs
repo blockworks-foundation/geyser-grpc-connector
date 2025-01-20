@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::env;
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
-use futures::{SinkExt, Stream, StreamExt};
+use futures::{Sink, SinkExt, Stream, StreamExt};
+use futures::channel::mpsc::SendError;
 use log::{debug, error, info, log, trace, warn, Level};
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
@@ -21,11 +23,11 @@ use crate::yellowstone_grpc_util::{
 };
 use crate::{Attempt, GrpcSourceConfig, Message};
 
-enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>, F: Interceptor> {
+enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>, F: Interceptor, R: Sink<SubscribeRequest, Error = futures::channel::mpsc::SendError>> {
     NotConnected(Attempt),
     // connected but not subscribed
     Connecting(Attempt, GeyserGrpcClient<F>),
-    Ready(S, GeyserGrpcClient<F>),
+    Ready(S, R),
     // error states
     RecoverableConnectionError(Attempt),
     // non-recoverable error
@@ -154,7 +156,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
 
                     let fut_subscribe = timeout(
                         subscribe_timeout.unwrap_or(Duration::MAX),
-                        client.subscribe_once(subscribe_filter),
+                        client.subscribe_with_request(Some(subscribe_filter)),
                     );
 
                     match await_or_exit(fut_subscribe, exit_notify.recv()).await {
@@ -162,14 +164,14 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                             match subscribe_result_timeout {
                                 Ok(subscribe_result) => {
                                     match subscribe_result {
-                                        Ok(geyser_stream) => {
+                                        Ok((subscribe_tx, geyser_stream)) => {
                                             if attempt > 1 {
                                                 debug!(
-                                                "subscribed to {} after {} failed attempts",
-                                                grpc_source, attempt
-                                            );
+                                                    "subscribed to {} after {} failed attempts",
+                                                    grpc_source, attempt
+                                                );
                                             }
-                                            ConnectionState::Ready(geyser_stream, client)
+                                            ConnectionState::Ready(geyser_stream, subscribe_tx)
                                         }
                                         Err(GeyserGrpcClientError::TonicStatus(_)) => {
                                             warn!(
@@ -249,38 +251,13 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         MaybeExit::Exit => ConnectionState::GracefulShutdown,
                     }
                 }
-                ConnectionState::Ready(mut geyser_stream, mut client) => {
+                ConnectionState::Ready(mut geyser_stream, mut subscribe_tx) => {
                     let mut started_at = Instant::now();
                     let receive_timeout = grpc_source.timeouts.as_ref().map(|t| t.receive_timeout);
                     'recv_loop: loop {
-                        let fut_stream = timeout(
-                            receive_timeout.unwrap_or(Duration::MAX),
-                            geyser_stream.next(),
-                        );
 
                         if started_at.elapsed() > Duration::from_secs(10) {
                             warn!("EXPERIMENTAL: reconnect with different filter");
-
-
-
-                            for _i in 0..10 {
-                                let mut sub_accounts = HashMap::new();
-                                sub_accounts.insert("all_accounts".to_string(),
-                                                    SubscribeRequestFilterAccounts {
-                                                        account: vec![],
-                                                        owner: vec![],
-                                                        filters: vec![],
-                                                    });
-                                let updated_filter = SubscribeRequest {
-                                    slots: Default::default(),
-                                    // ALL
-                                    accounts: sub_accounts,
-                                    ..Default::default()
-                                };
-                                let _foo = client.subscribe_once(updated_filter).await.unwrap();
-
-
-                            }
 
                             let mut sub_accounts = HashMap::new();
                             sub_accounts.insert("all_accounts".to_string(),
@@ -296,13 +273,16 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                 accounts: sub_accounts,
                                 ..Default::default()
                             };
-
-
-                            let updated_sub = client.subscribe_once(updated_filter).await.unwrap();
+                            subscribe_tx.send(updated_filter).await.unwrap();
 
                             started_at = Instant::now();
-                            break 'recv_loop ConnectionState::Ready(updated_sub, client);
+                            break 'recv_loop ConnectionState::Ready(geyser_stream, subscribe_tx);
                         }
+
+                        let fut_stream = timeout(
+                            receive_timeout.unwrap_or(Duration::MAX),
+                            geyser_stream.next(),
+                        );
 
                         let MaybeExit::Continue(geyser_stream_res) =
                             await_or_exit(fut_stream, exit_notify.recv()).await
