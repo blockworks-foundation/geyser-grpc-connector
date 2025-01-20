@@ -1,8 +1,9 @@
+use std::collections::HashMap;
 use std::env;
 use std::future::Future;
 use std::time::Duration;
 
-use futures::{Stream, StreamExt};
+use futures::{SinkExt, Stream, StreamExt};
 use log::{debug, error, info, log, trace, warn, Level};
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
@@ -11,7 +12,7 @@ use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout, Instant};
 use yellowstone_grpc_client::{GeyserGrpcBuilderError, GeyserGrpcClient, GeyserGrpcClientError};
-use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
+use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::service::Interceptor;
 use yellowstone_grpc_proto::tonic::Status;
 
@@ -24,7 +25,7 @@ enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>, F: Inter
     NotConnected(Attempt),
     // connected but not subscribed
     Connecting(Attempt, GeyserGrpcClient<F>),
-    Ready(S),
+    Ready(S, GeyserGrpcClient<F>),
     // error states
     RecoverableConnectionError(Attempt),
     // non-recoverable error
@@ -69,11 +70,14 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
 ) -> JoinHandle<()> {
     // read this for argument: http://www.randomhacks.net/2019/03/08/should-rust-channels-panic-on-send/
 
+
     // task will be aborted when downstream receiver gets dropped
     // there are two ways to terminate: 1) using break 'main_loop 2) return from task
     let jh_geyser_task = tokio::spawn(async move {
         let mut state = ConnectionState::NotConnected(1);
         let mut messages_forwarded = 0;
+
+        let mut subscribe_filter = subscribe_filter.clone();
 
         'main_loop: loop {
             state = match state {
@@ -150,48 +154,6 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                     let subscribe_filter = subscribe_filter.clone();
                     debug!("Subscribe with filter {:?}", subscribe_filter);
 
-                    let subscribe_handler =
-                        |subscribe_result_timeout| match subscribe_result_timeout {
-                            Ok(subscribe_result) => {
-                                match subscribe_result {
-                                    Ok(geyser_stream) => {
-                                        if attempt > 1 {
-                                            debug!(
-                                                "subscribed to {} after {} failed attempts",
-                                                grpc_source, attempt
-                                            );
-                                        }
-                                        ConnectionState::Ready(geyser_stream)
-                                    }
-                                    Err(GeyserGrpcClientError::TonicStatus(_)) => {
-                                        warn!(
-                                            "subscribe failed on {} after {} attempts - retrying",
-                                            grpc_source, attempt
-                                        );
-                                        ConnectionState::RecoverableConnectionError(attempt + 1)
-                                    }
-                                    // non-recoverable
-                                    Err(unrecoverable_error) => {
-                                        error!(
-                                            "subscribe to {} failed with unrecoverable error: {}",
-                                            grpc_source, unrecoverable_error
-                                        );
-                                        ConnectionState::FatalError(
-                                            attempt + 1,
-                                            FatalErrorReason::SubscribeError,
-                                        )
-                                    }
-                                }
-                            }
-                            Err(_elapsed) => {
-                                warn!(
-                                    "subscribe failed with timeout on {} - retrying",
-                                    grpc_source
-                                );
-                                ConnectionState::RecoverableConnectionError(attempt + 1)
-                            }
-                        };
-
                     let fut_subscribe = timeout(
                         subscribe_timeout.unwrap_or(Duration::MAX),
                         client.subscribe_once(subscribe_filter),
@@ -199,7 +161,46 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
 
                     match await_or_exit(fut_subscribe, exit_notify.recv()).await {
                         MaybeExit::Continue(subscribe_result_timeout) => {
-                            subscribe_handler(subscribe_result_timeout)
+                            (|subscribe_result_timeout| match subscribe_result_timeout {
+                                Ok(subscribe_result) => {
+                                    match subscribe_result {
+                                        Ok(geyser_stream) => {
+                                            if attempt > 1 {
+                                                debug!(
+                                                "subscribed to {} after {} failed attempts",
+                                                grpc_source, attempt
+                                            );
+                                            }
+                                            ConnectionState::Ready(geyser_stream, client)
+                                        }
+                                        Err(GeyserGrpcClientError::TonicStatus(_)) => {
+                                            warn!(
+                                            "subscribe failed on {} after {} attempts - retrying",
+                                            grpc_source, attempt
+                                        );
+                                            ConnectionState::RecoverableConnectionError(attempt + 1)
+                                        }
+                                        // non-recoverable
+                                        Err(unrecoverable_error) => {
+                                            error!(
+                                            "subscribe to {} failed with unrecoverable error: {}",
+                                            grpc_source, unrecoverable_error
+                                        );
+                                            ConnectionState::FatalError(
+                                                attempt + 1,
+                                                FatalErrorReason::SubscribeError,
+                                            )
+                                        }
+                                    }
+                                }
+                                Err(_elapsed) => {
+                                    warn!(
+                                    "subscribe failed with timeout on {} - retrying",
+                                    grpc_source
+                                );
+                                    ConnectionState::RecoverableConnectionError(attempt + 1)
+                                }
+                            })(subscribe_result_timeout)
                         }
                         MaybeExit::Exit => ConnectionState::GracefulShutdown,
                     }
@@ -250,13 +251,36 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                         MaybeExit::Exit => ConnectionState::GracefulShutdown,
                     }
                 }
-                ConnectionState::Ready(mut geyser_stream) => {
+                ConnectionState::Ready(mut geyser_stream, client) => {
+                    let mut started_at = Instant::now();
                     let receive_timeout = grpc_source.timeouts.as_ref().map(|t| t.receive_timeout);
                     'recv_loop: loop {
                         let fut_stream = timeout(
                             receive_timeout.unwrap_or(Duration::MAX),
                             geyser_stream.next(),
                         );
+
+                        if started_at.elapsed() > Duration::from_secs(10) {
+                            warn!("EXPERIMENTAL: reconnect with different filter");
+
+                            let mut sub_accounts = HashMap::new();
+                            sub_accounts.insert("all_accounts".to_string(),
+                                        SubscribeRequestFilterAccounts {
+                                            account: vec![],
+                                            owner: vec![],
+                                            filters: vec![],
+                                        });
+                            
+                            subscribe_filter = SubscribeRequest {
+                                slots: Default::default(),
+                                // ALL
+                                accounts: sub_accounts,
+                                ..Default::default()
+                            };
+                            
+                            started_at = Instant::now();
+                            break 'recv_loop ConnectionState::Ready(geyser_stream, client);
+                        }
 
                         let MaybeExit::Continue(geyser_stream_res) =
                             await_or_exit(fut_stream, exit_notify.recv()).await
