@@ -7,6 +7,7 @@ use std::time::Duration;
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use futures::channel::mpsc::SendError;
 use log::{debug, error, info, log, trace, warn, Level};
+use tokio::select;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc::error::SendTimeoutError;
@@ -51,6 +52,7 @@ pub fn create_geyser_autoconnection_task(
 ) -> (JoinHandle<()>, Receiver<Message>, Sender<SubscribeRequest>) {
     let (sender, receiver_channel) = tokio::sync::mpsc::channel::<Message>(1);
 
+    // TODO rename
     let (join_handle, subscribe_tx) = create_geyser_autoconnection_task_with_mpsc(
         grpc_source,
         subscribe_filter,
@@ -71,7 +73,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
     mut exit_notify: broadcast::Receiver<()>,
 ) -> (JoinHandle<()>, Sender<SubscribeRequest>) {
     // read this for argument: http://www.randomhacks.net/2019/03/08/should-rust-channels-panic-on-send/
-    let (subscribe_tx, subscribe_rx) = tokio::sync::mpsc::channel::<SubscribeRequest>(1);
+    let (client_subscribe_tx, mut client_subscribe_rx) = tokio::sync::mpsc::channel::<SubscribeRequest>(1);
 
     // task will be aborted when downstream receiver gets dropped
     // there are two ways to terminate: 1) using break 'main_loop 2) return from task
@@ -164,6 +166,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                             match subscribe_result_timeout {
                                 Ok(subscribe_result) => {
                                     match subscribe_result {
+                                        // TODO rename
                                         Ok((subscribe_tx, geyser_stream)) => {
                                             if attempt > 1 {
                                                 debug!(
@@ -279,58 +282,52 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                             break 'recv_loop ConnectionState::Ready(geyser_stream, subscribe_tx);
                         }
 
-                        let fut_stream = timeout(
-                            receive_timeout.unwrap_or(Duration::MAX),
-                            geyser_stream.next(),
-                        );
+                        // let fut_stream = timeout(
+                        //     receive_timeout.unwrap_or(Duration::MAX),
+                        //     geyser_stream.next(),
+                        // );
 
-                        let MaybeExit::Continue(geyser_stream_res) =
-                            await_or_exit(fut_stream, exit_notify.recv()).await
-                        else {
-                            break 'recv_loop ConnectionState::GracefulShutdown;
-                        };
-
-                        match geyser_stream_res {
-                            Ok(Some(Ok(update_message))) => {
-                                trace!("> recv update message from {}", grpc_source);
-                                // note: first send never blocks as the mpsc channel has capacity 1
-                                let warning_threshold = if messages_forwarded == 1 {
-                                    Duration::from_millis(3000)
-                                } else {
-                                    Duration::from_millis(500)
-                                };
-                                let started_at = Instant::now();
-
-                                let fut_send = mpsc_downstream.send_timeout(
-                                    Message::GeyserSubscribeUpdate(Box::new(update_message)),
-                                    warning_threshold,
-                                );
-
-                                let MaybeExit::Continue(mpsc_downstream_result) =
-                                    await_or_exit(fut_send, exit_notify.recv()).await
-                                else {
-                                    break 'recv_loop ConnectionState::GracefulShutdown;
-                                };
-
-                                match mpsc_downstream_result {
-                                    Ok(()) => {
-                                        messages_forwarded += 1;
-                                        if messages_forwarded == 1 {
-                                            // note: first send never blocks - do not print time as this is a lie
-                                            trace!("queued first update message");
-                                        } else {
-                                            trace!(
-                                                "queued update message {} in {:.02}ms",
-                                                messages_forwarded,
-                                                started_at.elapsed().as_secs_f32() * 1000.0
-                                            );
-                                        }
-                                        continue 'recv_loop;
+                        select! {
+                             exit_res = exit_notify.recv() => {
+                                match exit_res {
+                                    Ok(_) => {
+                                        debug!("exit on signal");
                                     }
-                                    Err(SendTimeoutError::Timeout(the_message)) => {
-                                        warn!("downstream receiver did not pick up message for {}ms - keep waiting", warning_threshold.as_millis());
+                                     Err(RecvError::Lagged(_)) => {
+                                        warn!("exit on signal (lag)");
+                                    }
+                                    Err(RecvError::Closed) => {
+                                        warn!("exit on signal (channel close)");
+                                    }
+                                }
+                                break 'recv_loop ConnectionState::GracefulShutdown;
+                            },
+                            geyser_stream_res = timeout(
+                                    receive_timeout.unwrap_or(Duration::MAX),
+                                    geyser_stream.next(),
+                                ) => {
 
-                                        let fut_send = mpsc_downstream.send(the_message);
+                                // let MaybeExit::Continue(geyser_stream_res) =
+                                //     await_or_exit(fut_stream, exit_notify.recv()).await
+                                // else {
+                                    // break 'recv_loop ConnectionState::GracefulShutdown;
+                                // };
+
+                                match geyser_stream_res {
+                                    Ok(Some(Ok(update_message))) => {
+                                        trace!("> recv update message from {}", grpc_source);
+                                        // note: first send never blocks as the mpsc channel has capacity 1
+                                        let warning_threshold = if messages_forwarded == 1 {
+                                            Duration::from_millis(3000)
+                                        } else {
+                                            Duration::from_millis(500)
+                                        };
+                                        let started_at = Instant::now();
+
+                                        let fut_send = mpsc_downstream.send_timeout(
+                                            Message::GeyserSubscribeUpdate(Box::new(update_message)),
+                                            warning_threshold,
+                                        );
 
                                         let MaybeExit::Continue(mpsc_downstream_result) =
                                             await_or_exit(fut_send, exit_notify.recv()).await
@@ -341,14 +338,49 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                         match mpsc_downstream_result {
                                             Ok(()) => {
                                                 messages_forwarded += 1;
-                                                trace!(
-                                                    "queued delayed update message {} in {:.02}ms",
-                                                    messages_forwarded,
-                                                    started_at.elapsed().as_secs_f32() * 1000.0
-                                                );
+                                                if messages_forwarded == 1 {
+                                                    // note: first send never blocks - do not print time as this is a lie
+                                                    trace!("queued first update message");
+                                                } else {
+                                                    trace!(
+                                                        "queued update message {} in {:.02}ms",
+                                                        messages_forwarded,
+                                                        started_at.elapsed().as_secs_f32() * 1000.0
+                                                    );
+                                                }
+                                                continue 'recv_loop;
                                             }
-                                            Err(_send_error) => {
-                                                warn!("downstream receiver closed, message is lost - aborting");
+                                            Err(SendTimeoutError::Timeout(the_message)) => {
+                                                warn!("downstream receiver did not pick up message for {}ms - keep waiting", warning_threshold.as_millis());
+
+                                                let fut_send = mpsc_downstream.send(the_message);
+
+                                                let MaybeExit::Continue(mpsc_downstream_result) =
+                                                    await_or_exit(fut_send, exit_notify.recv()).await
+                                                else {
+                                                    break 'recv_loop ConnectionState::GracefulShutdown;
+                                                };
+
+                                                match mpsc_downstream_result {
+                                                    Ok(()) => {
+                                                        messages_forwarded += 1;
+                                                        trace!(
+                                                            "queued delayed update message {} in {:.02}ms",
+                                                            messages_forwarded,
+                                                            started_at.elapsed().as_secs_f32() * 1000.0
+                                                        );
+                                                    }
+                                                    Err(_send_error) => {
+                                                        warn!("downstream receiver closed, message is lost - aborting");
+                                                        break 'recv_loop ConnectionState::FatalError(
+                                                            0,
+                                                            FatalErrorReason::DownstreamChannelClosed,
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                            Err(SendTimeoutError::Closed(_)) => {
+                                                warn!("downstream receiver closed - aborting");
                                                 break 'recv_loop ConnectionState::FatalError(
                                                     0,
                                                     FatalErrorReason::DownstreamChannelClosed,
@@ -356,29 +388,28 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                             }
                                         }
                                     }
-                                    Err(SendTimeoutError::Closed(_)) => {
-                                        warn!("downstream receiver closed - aborting");
-                                        break 'recv_loop ConnectionState::FatalError(
-                                            0,
-                                            FatalErrorReason::DownstreamChannelClosed,
-                                        );
+                                    Ok(Some(Err(tonic_status))) => {
+                                        // all tonic errors are recoverable
+                                        warn!("error on {} - retrying: {:?}", grpc_source, tonic_status);
+                                        break 'recv_loop ConnectionState::WaitReconnect(1);
                                     }
-                                }
+                                    Ok(None) => {
+                                        warn!("geyser stream closed on {} - retrying", grpc_source);
+                                        break 'recv_loop ConnectionState::WaitReconnect(1);
+                                    }
+                                    Err(_elapsed) => {
+                                        warn!("timeout on {} - retrying", grpc_source);
+                                        break 'recv_loop ConnectionState::WaitReconnect(1);
+                                    }
+                                }; // -- END match
+
+                            },
+                            update = client_subscribe_rx.recv() => {
+
                             }
-                            Ok(Some(Err(tonic_status))) => {
-                                // all tonic errors are recoverable
-                                warn!("error on {} - retrying: {:?}", grpc_source, tonic_status);
-                                break 'recv_loop ConnectionState::WaitReconnect(1);
-                            }
-                            Ok(None) => {
-                                warn!("geyser stream closed on {} - retrying", grpc_source);
-                                break 'recv_loop ConnectionState::WaitReconnect(1);
-                            }
-                            Err(_elapsed) => {
-                                warn!("timeout on {} - retrying", grpc_source);
-                                break 'recv_loop ConnectionState::WaitReconnect(1);
-                            }
-                        }; // -- END match
+                        }
+
+
                     } // -- END receive loop
                 }
                 ConnectionState::GracefulShutdown => {
@@ -390,7 +421,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
         debug!("gracefully exiting geyser task loop");
     });
 
-    (jh_geyser_task, subscribe_tx)
+    (jh_geyser_task, client_subscribe_tx)
 }
 
 fn buffer_config_from_env() -> GeyserGrpcClientBufferConfig {
