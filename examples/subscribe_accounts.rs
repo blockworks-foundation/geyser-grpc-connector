@@ -66,11 +66,11 @@ pub async fn main() {
     // drop(client_subscribe_tx);
 
     // testcase 2
-    // spawn_subscribe_filter_updater(client_subscribe_tx.clone());
+    spawn_subscribe_filter_updater(client_subscribe_tx.clone());
 
 
     // testcase 3
-    // spawn_subscribe_broken_filter_updater
+    // spawn_subscribe_broken_filter_updater(client_subscribe_tx.clone());
 
     let current_processed_slot = AtomicSlot::default();
     start_tracking_account_consumer(geyser_messages_rx, current_processed_slot.clone());

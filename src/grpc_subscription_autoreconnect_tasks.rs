@@ -290,10 +290,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                         subscribe_filter_on_connect = subscribe_request.clone();
                                         // note: if the subscription is invalid, it will trigger a Tonic error:
                                         //  Status { code: InvalidArgument, message: "failed to create filter: Invalid Base58 string", source: None }
-                                        let fut_send = geyser_subscribe_tx.send(subscribe_request);
-                                        let MaybeExit::Continue(send_result) =
-                                            await_or_exit(fut_send, exit_notify.recv()).await
-                                        else {
+                                        if let Err(send_err) = geyser_subscribe_tx.send(subscribe_request).await {
                                             warn!("fail to send subscription update - disconnect and retry");
                                             break 'recv_loop ConnectionState::WaitReconnect(1);
                                         };
