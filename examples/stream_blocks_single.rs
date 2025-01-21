@@ -6,7 +6,6 @@ use solana_sdk::pubkey::Pubkey;
 use std::env;
 use std::pin::pin;
 
-use csv::Writer;
 use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
@@ -68,13 +67,13 @@ impl FromYellowstoneExtractor for BlockMiniExtractor {
     }
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 pub async fn main() {
     // RUST_LOG=info,stream_blocks_mainnet=debug,geyser_grpc_connector=trace
     tracing_subscriber::fmt::init();
     // console_subscriber::init();
 
-    const COMMITMENT_LEVEL: CommitmentConfig = CommitmentConfig::processed();
+    let commitment_level = CommitmentConfig::processed();
     let grpc_addr_green = env::var("GRPC_ADDR").expect("need grpc url for green");
     let grpc_x_token_green = env::var("GRPC_X_TOKEN").ok();
 
@@ -85,10 +84,10 @@ pub async fn main() {
     );
 
     let timeouts = GrpcConnectionTimeouts {
-        connect_timeout: Duration::from_secs(5),
-        request_timeout: Duration::from_secs(5),
-        subscribe_timeout: Duration::from_secs(5),
-        receive_timeout: Duration::from_secs(5),
+        connect_timeout: Duration::from_secs(25),
+        request_timeout: Duration::from_secs(25),
+        subscribe_timeout: Duration::from_secs(25),
+        receive_timeout: Duration::from_secs(25),
     };
 
     let config = GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());
@@ -97,17 +96,18 @@ pub async fn main() {
 
     let green_stream = create_geyser_reconnecting_stream(
         config.clone(),
-        GeyserFilter(COMMITMENT_LEVEL).accounts(),
+        GeyserFilter(commitment_level).accounts(),
     );
 
     let blue_stream = create_geyser_reconnecting_stream(
         config.clone(),
-        GeyserFilter(COMMITMENT_LEVEL).blocks_and_txs(),
+        GeyserFilter(commitment_level).blocks_and_txs(),
     );
 
     tokio::spawn(async move {
         let mut green_stream = pin!(green_stream);
         while let Some(message) = green_stream.next().await {
+            #[allow(clippy::single_match)]
             match message {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
                     match subscriber_update.update_oneof {
@@ -120,7 +120,6 @@ pub async fn main() {
                                 account_pk,
                                 account_info.data.len()
                             );
-                            let bytes: [u8; 32] = account_pk.to_bytes();
                         }
                         _ => {}
                     }
@@ -135,7 +134,7 @@ pub async fn main() {
 
     tokio::spawn(async move {
         let mut blue_stream = pin!(blue_stream);
-        let extractor = BlockMiniExtractor(COMMITMENT_LEVEL);
+        let extractor = BlockMiniExtractor(commitment_level);
         while let Some(message) = blue_stream.next().await {
             match message {
                 Message::GeyserSubscribeUpdate(subscriber_update) => {
@@ -159,3 +158,13 @@ pub async fn main() {
     sleep(Duration::from_secs(1800)).await;
 }
 
+#[allow(dead_code)]
+fn map_block_update(update: SubscribeUpdate) -> Option<Slot> {
+    match update.update_oneof {
+        Some(UpdateOneof::Block(update_block_message)) => {
+            let slot = update_block_message.slot;
+            Some(slot)
+        }
+        _ => None,
+    }
+}

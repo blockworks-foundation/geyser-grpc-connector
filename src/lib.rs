@@ -1,7 +1,10 @@
-use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
 use std::time::Duration;
+
+use solana_sdk::commitment_config::CommitmentConfig;
 use yellowstone_grpc_proto::geyser::{
     CommitmentLevel, SubscribeRequest, SubscribeRequestFilterAccounts,
     SubscribeRequestFilterBlocks, SubscribeRequestFilterBlocksMeta, SubscribeRequestFilterSlots,
@@ -9,11 +12,19 @@ use yellowstone_grpc_proto::geyser::{
 };
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 
+pub use yellowstone_grpc_client::{
+    GeyserGrpcClient, GeyserGrpcClientError, GeyserGrpcClientResult,
+};
+
 pub mod channel_plugger;
 pub mod grpc_subscription_autoreconnect_streams;
 pub mod grpc_subscription_autoreconnect_tasks;
 pub mod grpcmultiplex_fastestwins;
+pub mod histogram_percentiles;
 mod obfuscate;
+pub mod yellowstone_grpc_util;
+
+pub type AtomicSlot = Arc<AtomicU64>;
 
 // 1-based attempt counter
 type Attempt = u32;
@@ -156,20 +167,8 @@ impl GeyserFilter {
 pub fn map_commitment_level(commitment_config: CommitmentConfig) -> CommitmentLevel {
     // solana_sdk -> yellowstone
     match commitment_config.commitment {
-        solana_sdk::commitment_config::CommitmentLevel::Processed => {
-            yellowstone_grpc_proto::prelude::CommitmentLevel::Processed
-        }
-        solana_sdk::commitment_config::CommitmentLevel::Confirmed => {
-            yellowstone_grpc_proto::prelude::CommitmentLevel::Confirmed
-        }
-        solana_sdk::commitment_config::CommitmentLevel::Finalized => {
-            yellowstone_grpc_proto::prelude::CommitmentLevel::Finalized
-        }
-        _ => {
-            panic!(
-                "unsupported commitment level {}",
-                commitment_config.commitment
-            )
-        }
+        solana_sdk::commitment_config::CommitmentLevel::Processed => CommitmentLevel::Processed,
+        solana_sdk::commitment_config::CommitmentLevel::Confirmed => CommitmentLevel::Confirmed,
+        solana_sdk::commitment_config::CommitmentLevel::Finalized => CommitmentLevel::Finalized,
     }
 }

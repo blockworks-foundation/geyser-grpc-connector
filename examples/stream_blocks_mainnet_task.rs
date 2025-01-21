@@ -1,37 +1,29 @@
-use futures::Stream;
-use log::{info, warn};
-use solana_sdk::clock::Slot;
-use solana_sdk::commitment_config::CommitmentConfig;
 use std::env;
-use std::pin::pin;
 
 use base64::Engine;
 use itertools::Itertools;
-use solana_sdk::borsh0_10::try_from_slice_unchecked;
-/// This file mocks the core model of the RPC server.
-use solana_sdk::compute_budget;
+use log::{info, warn};
+use solana_sdk::clock::Slot;
+use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::hash::Hash;
 use solana_sdk::instruction::CompiledInstruction;
 use solana_sdk::message::v0::MessageAddressTableLookup;
 use solana_sdk::message::{v0, MessageHeader, VersionedMessage};
 use solana_sdk::pubkey::Pubkey;
-
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::TransactionError;
+/// This file mocks the core model of the RPC server.
+use solana_sdk::{borsh1, compute_budget};
 use tokio::sync::mpsc::Receiver;
-use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
-
-use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::{
-    create_geyser_autoconnection_task, create_geyser_autoconnection_task_with_mpsc,
-};
-use geyser_grpc_connector::grpcmultiplex_fastestwins::{
-    create_multiplexed_stream, FromYellowstoneExtractor,
-};
-use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
+use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
+
+use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
+use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
+use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
 
 fn start_example_blockmeta_consumer(mut multiplex_channel: Receiver<Message>) {
     tokio::spawn(async move {
@@ -54,6 +46,7 @@ fn start_example_blockmeta_consumer(mut multiplex_channel: Receiver<Message>) {
     });
 }
 
+#[allow(dead_code)]
 struct BlockExtractor(CommitmentConfig);
 
 impl FromYellowstoneExtractor for BlockExtractor {
@@ -74,6 +67,7 @@ pub struct BlockMetaMini {
     pub commitment_config: CommitmentConfig,
 }
 
+#[allow(dead_code)]
 struct BlockMetaExtractor(CommitmentConfig);
 
 impl FromYellowstoneExtractor for BlockMetaExtractor {
@@ -93,7 +87,7 @@ impl FromYellowstoneExtractor for BlockMetaExtractor {
     }
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 pub async fn main() {
     // RUST_LOG=info,stream_blocks_mainnet=debug,geyser_grpc_connector=trace
     tracing_subscriber::fmt::init();
@@ -124,6 +118,7 @@ pub async fn main() {
         subscribe_timeout: Duration::from_secs(5),
         receive_timeout: Duration::from_secs(5),
     };
+    let (_, exit_notify) = tokio::sync::broadcast::channel(1);
 
     let green_config =
         GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());
@@ -137,16 +132,19 @@ pub async fn main() {
         green_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
         autoconnect_tx.clone(),
+        exit_notify.resubscribe(),
     );
     let _blue_stream_ah = create_geyser_autoconnection_task_with_mpsc(
         blue_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
         autoconnect_tx.clone(),
+        exit_notify.resubscribe(),
     );
     let _toxiproxy_stream_ah = create_geyser_autoconnection_task_with_mpsc(
         toxiproxy_config.clone(),
         GeyserFilter(CommitmentConfig::confirmed()).blocks_meta(),
         autoconnect_tx.clone(),
+        exit_notify,
     );
     start_example_blockmeta_consumer(blockmeta_rx);
 
@@ -187,21 +185,10 @@ pub fn map_produced_block(
         .transactions
         .into_iter()
         .filter_map(|tx| {
-            let Some(meta) = tx.meta else {
-                return None;
-            };
-
-            let Some(transaction) = tx.transaction else {
-                return None;
-            };
-
-            let Some(message) = transaction.message else {
-                return None;
-            };
-
-            let Some(header) = message.header else {
-                return None;
-            };
+            let meta = tx.meta?;
+            let transaction = tx.transaction?;
+            let message = transaction.message?;
+            let header = message.header?;
 
             let signatures = transaction
                 .signatures
@@ -268,66 +255,32 @@ pub fn map_produced_block(
                     .collect(),
             });
 
-            let legacy_compute_budget: Option<(u32, Option<u64>)> =
-                message.instructions().iter().find_map(|i| {
-                    if i.program_id(message.static_account_keys())
-                        .eq(&compute_budget::id())
+            let cu_requested = message.instructions().iter().find_map(|i| {
+                if i.program_id(message.static_account_keys())
+                    .eq(&compute_budget::id())
+                {
+                    if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
+                        borsh1::try_from_slice_unchecked(i.data.as_slice())
                     {
-                        if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
-                            units,
-                            additional_fee,
-                        }) = try_from_slice_unchecked(i.data.as_slice())
-                        {
-                            if additional_fee > 0 {
-                                return Some((
-                                    units,
-                                    Some(((units * 1000) / additional_fee) as u64),
-                                ));
-                            } else {
-                                return Some((units, None));
-                            }
-                        }
+                        return Some(limit);
                     }
-                    None
-                });
+                }
+                None
+            });
 
-            let legacy_cu_requested = legacy_compute_budget.map(|x| x.0);
-            let legacy_prioritization_fees = legacy_compute_budget.map(|x| x.1).unwrap_or(None);
-
-            let cu_requested = message
-                .instructions()
-                .iter()
-                .find_map(|i| {
-                    if i.program_id(message.static_account_keys())
-                        .eq(&compute_budget::id())
+            let prioritization_fees = message.instructions().iter().find_map(|i| {
+                if i.program_id(message.static_account_keys())
+                    .eq(&compute_budget::id())
+                {
+                    if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
+                        borsh1::try_from_slice_unchecked(i.data.as_slice())
                     {
-                        if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
-                            try_from_slice_unchecked(i.data.as_slice())
-                        {
-                            return Some(limit);
-                        }
+                        return Some(price);
                     }
-                    None
-                })
-                .or(legacy_cu_requested);
+                }
 
-            let prioritization_fees = message
-                .instructions()
-                .iter()
-                .find_map(|i| {
-                    if i.program_id(message.static_account_keys())
-                        .eq(&compute_budget::id())
-                    {
-                        if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
-                            try_from_slice_unchecked(i.data.as_slice())
-                        {
-                            return Some(price);
-                        }
-                    }
-
-                    None
-                })
-                .or(legacy_prioritization_fees);
+                None
+            });
 
             Some(TransactionInfo {
                 signature: signature.to_string(),
