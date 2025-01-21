@@ -70,15 +70,12 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
     mpsc_downstream: mpsc::Sender<Message>,
     exit_notify: broadcast::Receiver<()>,
 ) -> JoinHandle<()> {
-    let (_noop_subscribe_filter_update_tx, subscribe_filter_update_rx) =
-        mpsc::channel::<SubscribeRequest>(1);
-
     create_geyser_autoconnection_task_with_updater(
         grpc_source,
         subscribe_filter,
         mpsc_downstream,
         exit_notify,
-        subscribe_filter_update_rx,
+        None,
     )
 }
 
@@ -92,13 +89,17 @@ pub fn create_geyser_autoconnection_task_with_updater(
     subscribe_filter: SubscribeRequest,
     mpsc_downstream: mpsc::Sender<Message>,
     mut exit_notify: broadcast::Receiver<()>,
-    mut subscribe_filter_update_rx: mpsc::Receiver<SubscribeRequest>,
+    mut subscribe_filter_update_rx: Option<mpsc::Receiver<SubscribeRequest>>,
 ) -> JoinHandle<()> {
     // task will be aborted when downstream receiver gets dropped
     // there are two ways to terminate: 1) using break 'main_loop 2) return from task
     let jh_geyser_task = tokio::spawn(async move {
         // use this filter for initial connect and update it if the client requests a change via client_subscribe_tx channel
         let mut subscribe_filter_on_connect = subscribe_filter;
+
+        let (_dummy_filter_tx, dummy_filter_rx) = mpsc::channel::<SubscribeRequest>(1);
+        let mut subscribe_filter_update_rx =
+            subscribe_filter_update_rx.take().unwrap_or(dummy_filter_rx);
         let mut state = ConnectionState::NotConnected(1);
         let mut messages_forwarded = 0;
 
