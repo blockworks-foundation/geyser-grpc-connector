@@ -1,3 +1,4 @@
+/// NOT MAINTAINED - please use the `grpc_subscription_autoreconnect_streams` module instead
 use std::time::Duration;
 
 use async_stream::stream;
