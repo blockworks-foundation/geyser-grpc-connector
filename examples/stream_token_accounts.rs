@@ -269,6 +269,7 @@ pub fn token_accounts() -> SubscribeRequest {
             owner: vec![],
             // spl_token_ids().iter().map(|pubkey| pubkey.to_string()).collect(),
             filters: vec![],
+            nonempty_txn_signature: None,
         },
     );
 
@@ -306,6 +307,7 @@ pub fn token_accounts_finalized() -> SubscribeRequest {
                 .map(|pubkey| pubkey.to_string())
                 .collect(),
             filters: vec![],
+            nonempty_txn_signature: None,
         },
     );
 

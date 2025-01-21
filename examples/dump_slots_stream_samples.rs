@@ -231,6 +231,7 @@ fn all_slots_and_processed_accounts_together() -> SubscribeRequest {
             account: vec![],
             owner: vec![RAYDIUM_AMM_PUBKEY.to_string()],
             filters: vec![],
+            nonempty_txn_signature: None,
         },
     );
 
@@ -252,6 +253,7 @@ fn accounts_at_level(commitment_level: CommitmentLevel) -> SubscribeRequest {
             account: vec![],
             owner: vec![RAYDIUM_AMM_PUBKEY.to_string()],
             filters: vec![],
+            nonempty_txn_signature: None,
         },
     );
 

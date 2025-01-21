@@ -415,6 +415,7 @@ pub fn token_accounts() -> SubscribeRequest {
                 .map(|pubkey| pubkey.to_string())
                 .collect(),
             filters: vec![],
+            nonempty_txn_signature: None,
         },
     );
 
@@ -432,6 +433,7 @@ pub fn all_accounts_and_blocksmeta() -> SubscribeRequest {
             account: vec![],
             owner: vec![],
             filters: vec![],
+            nonempty_txn_signature: None,
         },
     );
 
@@ -462,6 +464,7 @@ pub fn all_accounts() -> SubscribeRequest {
             account: vec![],
             owner: vec![],
             filters: vec![],
+            nonempty_txn_signature: None,
         },
     );
 

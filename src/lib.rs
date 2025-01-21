@@ -153,6 +153,7 @@ impl GeyserFilter {
                 account: vec![],
                 owner: vec![],
                 filters: vec![],
+                nonempty_txn_signature: None,
             },
         );
 

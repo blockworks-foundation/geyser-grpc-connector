@@ -162,6 +162,7 @@ pub fn token_accounts() -> SubscribeRequest {
                 .map(|pubkey| pubkey.to_string())
                 .collect(),
             filters: vec![],
+            nonempty_txn_signature: None,
         },
     );
 
@@ -179,6 +180,7 @@ pub fn all_accounts_and_blocksmeta() -> SubscribeRequest {
             account: vec![],
             owner: vec![],
             filters: vec![],
+            nonempty_txn_signature: None,
         },
     );
 
@@ -209,6 +211,7 @@ pub fn all_accounts() -> SubscribeRequest {
             account: vec![],
             owner: vec![],
             filters: vec![],
+            nonempty_txn_signature: None,
         },
     );
 
@@ -229,6 +232,7 @@ pub fn jito1_account() -> SubscribeRequest {
             account: vec![account.to_string()],
             owner: vec![],
             filters: vec![],
+            nonempty_txn_signature: None,
         },
     );
 
@@ -249,6 +253,7 @@ pub fn jito2_account() -> SubscribeRequest {
             account: vec![account.to_string()],
             owner: vec![],
             filters: vec![],
+            nonempty_txn_signature: None,
         },
     );
 
@@ -266,6 +271,7 @@ pub fn broken_subscription() -> SubscribeRequest {
             account: vec!["nota_pubkey".to_string()],
             owner: vec![],
             filters: vec![],
+            nonempty_txn_signature: None,
         },
     );
 
