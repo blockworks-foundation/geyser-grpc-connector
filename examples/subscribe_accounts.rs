@@ -53,8 +53,10 @@ pub async fn main() {
 
     let (autoconnect_tx, geyser_messages_rx) = tokio::sync::mpsc::channel(10);
     let (_exit_tx, exit_rx) = tokio::sync::broadcast::channel::<()>(1);
+    let (subscribe_filter_update_tx, mut _subscribe_filter_update_rx) =
+        tokio::sync::mpsc::channel::<SubscribeRequest>(1);
 
-    let (_jh, client_subscribe_tx) = create_geyser_autoconnection_task_with_mpsc(
+    let _jh = create_geyser_autoconnection_task_with_mpsc(
         config.clone(),
         jito2_account(),
         autoconnect_tx.clone(),
@@ -63,14 +65,13 @@ pub async fn main() {
 
     // testcase 1
     // test if the autoconnector continues to work even if the channel drops
-    // drop(client_subscribe_tx);
+    // drop(subscribe_filter_update_tx);
 
     // testcase 2
-    spawn_subscribe_filter_updater(client_subscribe_tx.clone());
-
+    spawn_subscribe_filter_updater(subscribe_filter_update_tx.clone());
 
     // testcase 3
-    // spawn_subscribe_broken_filter_updater(client_subscribe_tx.clone());
+    // spawn_subscribe_broken_filter_updater(subscribe_filter_update_tx.clone());
 
     let current_processed_slot = AtomicSlot::default();
     start_tracking_account_consumer(geyser_messages_rx, current_processed_slot.clone());
@@ -114,12 +115,13 @@ fn start_tracking_account_consumer(
     });
 }
 
-fn spawn_subscribe_filter_updater(client_subscribe_tx: Sender<SubscribeRequest>) {
+#[allow(dead_code)]
+fn spawn_subscribe_filter_updater(subscribe_filter_update_tx: Sender<SubscribeRequest>) {
     tokio::spawn(async move {
         loop {
             sleep(Duration::from_secs(5)).await;
             info!("updating filters");
-            client_subscribe_tx
+            subscribe_filter_update_tx
                 .send(jito1_account())
                 .await
                 .expect("send");
@@ -127,12 +129,13 @@ fn spawn_subscribe_filter_updater(client_subscribe_tx: Sender<SubscribeRequest>)
     });
 }
 
-fn spawn_subscribe_broken_filter_updater(client_subscribe_tx: Sender<SubscribeRequest>) {
+#[allow(dead_code)]
+fn spawn_subscribe_broken_filter_updater(subscribe_filter_update_tx: Sender<SubscribeRequest>) {
     tokio::spawn(async move {
         loop {
             sleep(Duration::from_secs(5)).await;
             info!("updating filters");
-            client_subscribe_tx
+            subscribe_filter_update_tx
                 .send(broken_subscription())
                 .await
                 .expect("send");
@@ -255,7 +258,6 @@ pub fn jito2_account() -> SubscribeRequest {
     }
 }
 
-
 pub fn broken_subscription() -> SubscribeRequest {
     let mut accounts_subs = HashMap::new();
     accounts_subs.insert(
@@ -272,7 +274,6 @@ pub fn broken_subscription() -> SubscribeRequest {
         ..Default::default()
     }
 }
-
 
 pub fn slots() -> SubscribeRequest {
     let mut slots_subs = HashMap::new();

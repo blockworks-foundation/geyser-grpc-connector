@@ -1,23 +1,18 @@
-use std::collections::HashMap;
 use std::env;
 use std::future::Future;
-use std::sync::Arc;
 use std::time::Duration;
 
-use futures::channel::mpsc::SendError;
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use log::{debug, error, info, log, trace, warn, Level};
 use tokio::select;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::SendTimeoutError;
-use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout, Instant};
 use yellowstone_grpc_client::{GeyserGrpcBuilderError, GeyserGrpcClient, GeyserGrpcClientError};
-use yellowstone_grpc_proto::geyser::{
-    SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeUpdate,
-};
+use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeUpdate};
 use yellowstone_grpc_proto::tonic::service::Interceptor;
 use yellowstone_grpc_proto::tonic::Status;
 
@@ -55,33 +50,50 @@ pub fn create_geyser_autoconnection_task(
     grpc_source: GrpcSourceConfig,
     subscribe_filter: SubscribeRequest,
     exit_notify: broadcast::Receiver<()>,
-) -> (JoinHandle<()>, Receiver<Message>, Sender<SubscribeRequest>) {
+) -> (JoinHandle<()>, mpsc::Receiver<Message>) {
     let (sender, receiver_channel) = tokio::sync::mpsc::channel::<Message>(1);
 
-    // TODO rename
-    let (join_handle, client_subscribe_tx) = create_geyser_autoconnection_task_with_mpsc(
+    let join_handle = create_geyser_autoconnection_task_with_mpsc(
         grpc_source,
         subscribe_filter,
         sender,
         exit_notify,
     );
 
-    (join_handle, receiver_channel, client_subscribe_tx)
+    (join_handle, receiver_channel)
+}
+
+// compat
+pub fn create_geyser_autoconnection_task_with_mpsc(
+    grpc_source: GrpcSourceConfig,
+    subscribe_filter: SubscribeRequest,
+    mpsc_downstream: mpsc::Sender<Message>,
+    exit_notify: broadcast::Receiver<()>,
+) -> JoinHandle<()> {
+    let (_noop_subscribe_filter_update_tx, subscribe_filter_update_rx) =
+        mpsc::channel::<SubscribeRequest>(1);
+
+    create_geyser_autoconnection_task_with_updater(
+        grpc_source,
+        subscribe_filter,
+        mpsc_downstream,
+        exit_notify,
+        subscribe_filter_update_rx,
+    )
 }
 
 /// connect to grpc source performing autoconnect if required,
 /// returns mpsc channel; task will abort on fatal error
 /// will shut down when receiver is dropped
-pub fn create_geyser_autoconnection_task_with_mpsc(
+///
+/// read this for argument: http://www.randomhacks.net/2019/03/08/should-rust-channels-panic-on-send/
+pub fn create_geyser_autoconnection_task_with_updater(
     grpc_source: GrpcSourceConfig,
     subscribe_filter: SubscribeRequest,
-    mpsc_downstream: tokio::sync::mpsc::Sender<Message>,
+    mpsc_downstream: mpsc::Sender<Message>,
     mut exit_notify: broadcast::Receiver<()>,
-) -> (JoinHandle<()>, Sender<SubscribeRequest>) {
-    // read this for argument: http://www.randomhacks.net/2019/03/08/should-rust-channels-panic-on-send/
-    let (client_subscribe_tx, mut client_subscribe_rx) =
-        tokio::sync::mpsc::channel::<SubscribeRequest>(1);
-
+    mut subscribe_filter_update_rx: mpsc::Receiver<SubscribeRequest>,
+) -> JoinHandle<()> {
     // task will be aborted when downstream receiver gets dropped
     // there are two ways to terminate: 1) using break 'main_loop 2) return from task
     let jh_geyser_task = tokio::spawn(async move {
@@ -163,7 +175,10 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                     let subscribe_timeout =
                         grpc_source.timeouts.as_ref().map(|t| t.subscribe_timeout);
                     let subscribe_filter_on_connect = subscribe_filter_on_connect.clone();
-                    debug!("Subscribe initially with filter {:?}", subscribe_filter_on_connect);
+                    debug!(
+                        "Subscribe initially with filter {:?}",
+                        subscribe_filter_on_connect
+                    );
 
                     let fut_subscribe = timeout(
                         subscribe_timeout.unwrap_or(Duration::MAX),
@@ -267,6 +282,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                 }
                 ConnectionState::Ready(mut geyser_stream, mut geyser_subscribe_tx) => {
                     let receive_timeout = grpc_source.timeouts.as_ref().map(|t| t.receive_timeout);
+
                     'recv_loop: loop {
                         select! {
                              exit_res = exit_notify.recv() => {
@@ -283,7 +299,8 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                 }
                                 break 'recv_loop ConnectionState::GracefulShutdown;
                             },
-                            client_subscribe_update = client_subscribe_rx.recv() => {
+                            // could model subscribe_filter_update_rx as optional here but did not figure out how
+                            client_subscribe_update = subscribe_filter_update_rx.recv() => {
                                 match client_subscribe_update {
                                     Some(subscribe_request) => {
                                         debug!("Subscription update from client with filter {:?}", subscribe_request);
@@ -291,7 +308,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                         // note: if the subscription is invalid, it will trigger a Tonic error:
                                         //  Status { code: InvalidArgument, message: "failed to create filter: Invalid Base58 string", source: None }
                                         if let Err(send_err) = geyser_subscribe_tx.send(subscribe_request).await {
-                                            warn!("fail to send subscription update - disconnect and retry");
+                                            warn!("fail to send subscription update - disconnect and retry: {}", send_err);
                                             break 'recv_loop ConnectionState::WaitReconnect(1);
                                         };
                                     }
@@ -305,12 +322,6 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
                                     receive_timeout.unwrap_or(Duration::MAX),
                                     geyser_stream.next(),
                                 ) => {
-
-                                // let MaybeExit::Continue(geyser_stream_res) =
-                                //     await_or_exit(fut_stream, exit_notify.recv()).await
-                                // else {
-                                    // break 'recv_loop ConnectionState::GracefulShutdown;
-                                // };
 
                                 match geyser_stream_res {
                                     Ok(Some(Ok(update_message))) => {
@@ -415,7 +426,7 @@ pub fn create_geyser_autoconnection_task_with_mpsc(
         debug!("gracefully exiting geyser task loop");
     });
 
-    (jh_geyser_task, client_subscribe_tx)
+    jh_geyser_task
 }
 
 fn buffer_config_from_env() -> GeyserGrpcClientBufferConfig {
