@@ -13,6 +13,7 @@ use yellowstone_grpc_proto::geyser::{
 };
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 
+use crate::obfuscate::url_obfuscate_api_token;
 pub use yellowstone_grpc_client::{
     GeyserGrpcClient, GeyserGrpcClientError, GeyserGrpcClientResult,
 };
@@ -60,9 +61,20 @@ impl Display for GrpcSourceConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "grpc_addr {}",
-            crate::obfuscate::url_obfuscate_api_token(&self.grpc_addr)
-        )
+            "grpc_addr {} (token? {}, compression {})",
+            url_obfuscate_api_token(&self.grpc_addr),
+            if self.grpc_x_token.is_some() {
+                "yes"
+            } else {
+                "no"
+            },
+            self.compression
+                .as_ref()
+                .map(|c| c.to_string())
+                .unwrap_or("none".to_string())
+        )?;
+
+        Ok(())
     }
 }
 
