@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 ///
 /// subsribe to grpc in multiple ways:
 /// - all slots and processed accounts in one subscription
@@ -18,7 +20,8 @@ use tokio::sync::broadcast;
 use tokio::sync::mpsc::Receiver;
 
 use yellowstone_grpc_proto::geyser::{
-    SubscribeRequest, SubscribeRequestFilterSlots, SubscribeUpdateSlot,
+    SubscribeRequest, SubscribeRequestFilterBlocksMeta, SubscribeRequestFilterSlots,
+    SubscribeRequestFilterTransactions, SubscribeUpdateSlot,
 };
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
@@ -54,24 +57,30 @@ fn start_all_slots_and_processed_accounts_consumer(mut slots_channel: Receiver<M
                             since_epoch_ms
                         );
                     }
-                    Some(UpdateOneof::Account(update_account)) => {
-                        let since_epoch_ms = SystemTime::now()
-                            .duration_since(SystemTime::UNIX_EPOCH)
-                            .unwrap()
-                            .as_millis();
-
-                        let account_info = update_account.account.unwrap();
-                        let slot = update_account.slot;
-                        let account_pk =
-                            Pubkey::new_from_array(account_info.pubkey.try_into().unwrap());
-                        let write_version = account_info.write_version;
-                        let data_len = account_info.data.len();
-                        // DUMPACCOUNT 283417593,HTQeo4GNbZfGY5G4fAkDr1S5xnz5qWXFgueRwgw53aU1,1332997857270,752,1723582355872
-                        info!(
-                            "MIXACCOUNT {},{},{},{},{}",
-                            slot, account_pk, write_version, data_len, since_epoch_ms
-                        );
+                    Some(UpdateOneof::BlockMeta(update_block_meta)) => {
+                        info!("block meta {:?}", update_block_meta);
                     }
+                    Some(UpdateOneof::Transaction(update_transaction)) => {
+                        info!("transaction slot {:?}", update_transaction.slot);
+                    }
+                    // Some(UpdateOneof::Account(update_account)) => {
+                    //     let since_epoch_ms = SystemTime::now()
+                    //         .duration_since(SystemTime::UNIX_EPOCH)
+                    //         .unwrap()
+                    //         .as_millis();
+                    //
+                    //     let account_info = update_account.account.unwrap();
+                    //     let slot = update_account.slot;
+                    //     let account_pk =
+                    //         Pubkey::new_from_array(account_info.pubkey.try_into().unwrap());
+                    //     let write_version = account_info.write_version;
+                    //     let data_len = account_info.data.len();
+                    //     // DUMPACCOUNT 283417593,HTQeo4GNbZfGY5G4fAkDr1S5xnz5qWXFgueRwgw53aU1,1332997857270,752,1723582355872
+                    //     info!(
+                    //         "MIXACCOUNT {},{},{},{},{}",
+                    //         slot, account_pk, write_version, data_len, since_epoch_ms
+                    //     );
+                    // }
                     None => {}
                     _ => {}
                 },
@@ -169,7 +178,7 @@ pub async fn main() {
     let green_config =
         GrpcSourceConfig::new(grpc_addr_green, grpc_x_token_green, None, timeouts.clone());
 
-    let (_, exit_notify) = broadcast::channel(1);
+    let (_exit_signal, exit_notify) = broadcast::channel(1);
 
     // mix of (all) slots and processed accounts
     let (autoconnect_tx, slots_accounts_rx) = tokio::sync::mpsc::channel(10);
@@ -180,34 +189,34 @@ pub async fn main() {
         exit_notify.resubscribe(),
     );
 
-    let (only_processed_accounts_tx, only_processed_accounts_rx) = tokio::sync::mpsc::channel(10);
-    let _accounts_processed_stream_ah = create_geyser_autoconnection_task_with_mpsc(
-        green_config.clone(),
-        accounts_at_level(CommitmentLevel::Processed),
-        only_processed_accounts_tx.clone(),
-        exit_notify.resubscribe(),
-    );
-
-    let (only_confirmed_accounts_tx, only_confirmed_accounts_rx) = tokio::sync::mpsc::channel(10);
-    let _accounts_confirmed_stream_ah = create_geyser_autoconnection_task_with_mpsc(
-        green_config.clone(),
-        accounts_at_level(CommitmentLevel::Confirmed),
-        only_confirmed_accounts_tx.clone(),
-        exit_notify.resubscribe(),
-    );
-
-    let (only_finalized_accounts_tx, only_finalized_accounts_rx) = tokio::sync::mpsc::channel(10);
-    let _accounts_finalized_stream_ah = create_geyser_autoconnection_task_with_mpsc(
-        green_config.clone(),
-        accounts_at_level(CommitmentLevel::Finalized),
-        only_finalized_accounts_tx.clone(),
-        exit_notify.resubscribe(),
-    );
+    // let (only_processed_accounts_tx, only_processed_accounts_rx) = tokio::sync::mpsc::channel(10);
+    // let _accounts_processed_stream_ah = create_geyser_autoconnection_task_with_mpsc(
+    //     green_config.clone(),
+    //     accounts_at_level(CommitmentLevel::Processed),
+    //     only_processed_accounts_tx.clone(),
+    //     exit_notify.resubscribe(),
+    // );
+    //
+    // let (only_confirmed_accounts_tx, only_confirmed_accounts_rx) = tokio::sync::mpsc::channel(10);
+    // let _accounts_confirmed_stream_ah = create_geyser_autoconnection_task_with_mpsc(
+    //     green_config.clone(),
+    //     accounts_at_level(CommitmentLevel::Confirmed),
+    //     only_confirmed_accounts_tx.clone(),
+    //     exit_notify.resubscribe(),
+    // );
+    //
+    // let (only_finalized_accounts_tx, only_finalized_accounts_rx) = tokio::sync::mpsc::channel(10);
+    // let _accounts_finalized_stream_ah = create_geyser_autoconnection_task_with_mpsc(
+    //     green_config.clone(),
+    //     accounts_at_level(CommitmentLevel::Finalized),
+    //     only_finalized_accounts_tx.clone(),
+    //     exit_notify.resubscribe(),
+    // );
 
     start_all_slots_and_processed_accounts_consumer(slots_accounts_rx);
-    start_account_same_level(only_processed_accounts_rx, CommitmentLevel::Processed);
-    start_account_same_level(only_confirmed_accounts_rx, CommitmentLevel::Confirmed);
-    start_account_same_level(only_finalized_accounts_rx, CommitmentLevel::Finalized);
+    // start_account_same_level(only_processed_accounts_rx, CommitmentLevel::Processed);
+    // start_account_same_level(only_confirmed_accounts_rx, CommitmentLevel::Confirmed);
+    // start_account_same_level(only_finalized_accounts_rx, CommitmentLevel::Finalized);
 
     // "infinite" sleep
     sleep(Duration::from_secs(3600 * 5)).await;
@@ -224,21 +233,41 @@ fn all_slots_and_processed_accounts_together() -> SubscribeRequest {
             filter_by_commitment: None,
         },
     );
-    let mut account_subs = HashMap::new();
-    account_subs.insert(
-        "client".to_string(),
-        SubscribeRequestFilterAccounts {
-            account: vec![],
-            owner: vec![RAYDIUM_AMM_PUBKEY.to_string()],
-            filters: vec![],
-            nonempty_txn_signature: None,
+
+    let transactions = HashMap::from([(
+        "geyser_tracker_tx".to_string(),
+        SubscribeRequestFilterTransactions {
+            vote: Some(false),
+            failed: None,
+            signature: None,
+            account_include: vec![],
+            account_exclude: vec![],
+            account_required: vec![],
         },
-    );
+    )]);
+
+    let blocks_meta = HashMap::from([(
+        "geyser_tracker_blocks_meta".to_string(),
+        SubscribeRequestFilterBlocksMeta {},
+    )]);
+
+    // let mut account_subs = HashMap::new();
+    // account_subs.insert(
+    //     "client".to_string(),
+    //     SubscribeRequestFilterAccounts {
+    //         account: vec![],
+    //         owner: vec![RAYDIUM_AMM_PUBKEY.to_string()],
+    //         filters: vec![],
+    //         nonempty_txn_signature: None,
+    //     },
+    // );
 
     SubscribeRequest {
         slots: slot_subs,
-        accounts: account_subs,
+        // accounts: account_subs,
         ping: None,
+        transactions,
+        blocks_meta,
         // implies "processed"
         commitment: None,
         ..Default::default()

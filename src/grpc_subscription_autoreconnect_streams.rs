@@ -58,6 +58,7 @@ pub fn create_geyser_reconnecting_stream(
                                 connect_timeout,
                                 request_timeout,
                                 GeyserGrpcClientBufferConfig::optimize_for_subscription(&subscribe_filter),
+                                None,
                             )
                             .await;
 

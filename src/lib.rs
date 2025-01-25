@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use solana_sdk::commitment_config::CommitmentConfig;
+use tonic::codec::CompressionEncoding;
 use yellowstone_grpc_proto::geyser::{
     CommitmentLevel, SubscribeRequest, SubscribeRequestFilterAccounts,
     SubscribeRequestFilterBlocks, SubscribeRequestFilterBlocksMeta, SubscribeRequestFilterSlots,
@@ -52,6 +53,7 @@ pub struct GrpcSourceConfig {
     pub grpc_x_token: Option<String>,
     tls_config: Option<ClientTlsConfig>,
     timeouts: Option<GrpcConnectionTimeouts>,
+    compression: Option<CompressionEncoding>,
 }
 
 impl Display for GrpcSourceConfig {
@@ -78,6 +80,7 @@ impl GrpcSourceConfig {
             grpc_x_token: None,
             tls_config: None,
             timeouts: None,
+            compression: None,
         }
     }
     pub fn new(
@@ -91,6 +94,21 @@ impl GrpcSourceConfig {
             grpc_x_token,
             tls_config,
             timeouts: Some(timeouts),
+            compression: None,
+        }
+    }
+    pub fn new_compressed(
+        grpc_addr: String,
+        grpc_x_token: Option<String>,
+        tls_config: Option<ClientTlsConfig>,
+        timeouts: GrpcConnectionTimeouts,
+    ) -> Self {
+        Self {
+            grpc_addr,
+            grpc_x_token,
+            tls_config,
+            timeouts: Some(timeouts),
+            compression: Some(CompressionEncoding::Zstd),
         }
     }
 }

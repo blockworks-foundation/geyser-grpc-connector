@@ -111,6 +111,7 @@ pub fn create_geyser_autoconnection_task_with_updater(
                     let config = grpc_source.tls_config.clone();
                     let connect_timeout = grpc_source.timeouts.as_ref().map(|t| t.connect_timeout);
                     let request_timeout = grpc_source.timeouts.as_ref().map(|t| t.request_timeout);
+                    let compression = grpc_source.compression;
                     log!(
                         if attempt > 1 {
                             Level::Warn
@@ -163,6 +164,7 @@ pub fn create_geyser_autoconnection_task_with_updater(
                         connect_timeout,
                         request_timeout,
                         buffer_config,
+                        compression,
                     );
 
                     match await_or_exit(fut_connector, exit_notify.recv()).await {

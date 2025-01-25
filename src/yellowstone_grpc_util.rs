@@ -1,4 +1,5 @@
 use std::time::Duration;
+use tonic::codec::CompressionEncoding;
 
 use tonic::metadata::errors::InvalidMetadataValue;
 use tonic::metadata::AsciiMetadataValue;
@@ -16,6 +17,7 @@ pub async fn connect_with_timeout<E, T>(
     tls_config: Option<ClientTlsConfig>,
     connect_timeout: Option<Duration>,
     request_timeout: Option<Duration>,
+    compression: Option<CompressionEncoding>,
 ) -> GeyserGrpcBuilderResult<GeyserGrpcClient<impl Interceptor>>
 where
     E: Into<Bytes>,
@@ -28,6 +30,7 @@ where
         connect_timeout,
         request_timeout,
         GeyserGrpcClientBufferConfig::default(),
+        compression,
     )
     .await
 }
@@ -76,6 +79,7 @@ pub async fn connect_with_timeout_with_buffers<E, T>(
     connect_timeout: Option<Duration>,
     request_timeout: Option<Duration>,
     buffer_config: GeyserGrpcClientBufferConfig,
+    compression: Option<CompressionEncoding>,
 ) -> GeyserGrpcBuilderResult<GeyserGrpcClient<impl Interceptor>>
 where
     E: Into<Bytes>,
@@ -111,12 +115,17 @@ where
     };
 
     let channel = endpoint.connect_lazy();
-    let client = GeyserGrpcClient::new(
-        HealthClient::with_interceptor(channel.clone(), interceptor.clone()),
-        GeyserClient::with_interceptor(channel, interceptor)
-            // DISALLOW GRPC - benching shows that it is slow
-            // .accept_compressed(CompressionEncoding::Gzip)
-            .max_decoding_message_size(usize::MAX),
-    );
+
+    let health_client = HealthClient::with_interceptor(channel.clone(), interceptor.clone());
+
+    let geyser_client = GeyserClient::with_interceptor(channel.clone(), interceptor.clone())
+        .max_decoding_message_size(usize::MAX);
+    let geyser_client = if let Some(compression_encoding) = compression {
+        geyser_client.accept_compressed(compression_encoding)
+    } else {
+        geyser_client
+    };
+
+    let client = GeyserGrpcClient::new(health_client, geyser_client);
     Ok(client)
 }
