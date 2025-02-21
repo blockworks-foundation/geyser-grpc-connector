@@ -114,7 +114,7 @@ fn build_subscription(commitment_level: CommitmentLevel) -> SubscribeRequest {
     blocks_subs.insert(
         "geyser_full_blocks".to_string(),
         SubscribeRequestFilterBlocks {
-            account_include: Some(true),
+            account_include: Default::default(),
             include_transactions: Some(true),
             include_accounts: Some(false),
             include_entries: Some(false),
