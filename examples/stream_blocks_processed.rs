@@ -1,29 +1,20 @@
-use std::collections::HashMap;
-/// compare load on RPC Node with processed block subscription vs confirmed/finalized
-
-use futures::{Stream, StreamExt};
-use log::{debug, info};
-use solana_sdk::clock::Slot;
-use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
-use solana_sdk::pubkey::Pubkey;
-use std::env;
-use std::pin::pin;
-use std::str::FromStr;
-use std::sync::atomic::Ordering;
-use std::time::{Duration, SystemTime};
 use clap::Parser;
-use solana_sdk::hash::hash;
+use log::info;
+use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
+use std::collections::HashMap;
+use std::env;
+use std::str::FromStr;
+use std::time::Duration;
 use tokio::sync::broadcast;
 
-use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
-use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
-use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, histogram_percentiles, map_commitment_level, Message};
-use tokio::time::{sleep};
-use tracing::warn;
-use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeRequestFilterSlots, SubscribeUpdate};
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
-
+use geyser_grpc_connector::{
+    map_commitment_level, GrpcConnectionTimeouts, GrpcSourceConfig, Message,
+};
+use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
+use yellowstone_grpc_proto::geyser::{
+    SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeRequestFilterSlots,
+};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -41,7 +32,12 @@ pub async fn main() {
     let args = Args::parse();
 
     let commitment_level = CommitmentLevel::from_str(&args.commitment_level.to_ascii_lowercase())
-        .unwrap_or_else(|_| panic!("Invalid argument commitment level: {}", args.commitment_level));
+        .unwrap_or_else(|_| {
+            panic!(
+                "Invalid argument commitment level: {}",
+                args.commitment_level
+            )
+        });
     let mut commitment_level_short = commitment_level.to_string().to_ascii_uppercase();
     commitment_level_short.truncate(1);
 
@@ -79,12 +75,14 @@ pub async fn main() {
     loop {
         match blocks_rx.recv().await {
             Some(Message::GeyserSubscribeUpdate(update)) => match update.update_oneof {
-                Some(UpdateOneof::Slot(_update_slot)) => {
-                }
+                Some(UpdateOneof::Slot(_update_slot)) => {}
                 Some(UpdateOneof::Block(update_block)) => {
-                    info!("({}) block {:?}: {} txs",
+                    info!(
+                        "({}) block {:?}: {} txs",
                         commitment_level_short,
-                        update_block.slot, update_block.transactions.len());
+                        update_block.slot,
+                        update_block.transactions.len()
+                    );
                 }
                 None => {}
                 _ => {}
@@ -96,11 +94,9 @@ pub async fn main() {
             Some(Message::Connecting(_)) => {}
         }
     }
-
 }
 
 fn build_subscription(commitment_level: CommitmentLevel) -> SubscribeRequest {
-
     let mut slots_subs = HashMap::new();
     slots_subs.insert(
         "geyser_slots".to_string(),
@@ -124,7 +120,9 @@ fn build_subscription(commitment_level: CommitmentLevel) -> SubscribeRequest {
     SubscribeRequest {
         slots: slots_subs,
         blocks: blocks_subs,
-        commitment: Some(map_commitment_level(CommitmentConfig { commitment: commitment_level }) as i32),
+        commitment: Some(map_commitment_level(CommitmentConfig {
+            commitment: commitment_level,
+        }) as i32),
         ..Default::default()
     }
 }
