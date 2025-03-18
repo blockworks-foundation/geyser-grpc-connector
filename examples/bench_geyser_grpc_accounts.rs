@@ -442,6 +442,7 @@ pub fn all_accounts_and_blocksmeta() -> SubscribeRequest {
         "client".to_string(),
         SubscribeRequestFilterSlots {
             filter_by_commitment: Some(true),
+            interslot_updates: Some(false),
         },
     );
 

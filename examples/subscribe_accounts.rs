@@ -189,6 +189,7 @@ pub fn all_accounts_and_blocksmeta() -> SubscribeRequest {
         "client".to_string(),
         SubscribeRequestFilterSlots {
             filter_by_commitment: Some(true),
+            interslot_updates: Some(false),
         },
     );
 
@@ -287,6 +288,7 @@ pub fn slots() -> SubscribeRequest {
         "client".to_string(),
         SubscribeRequestFilterSlots {
             filter_by_commitment: None,
+            interslot_updates: Some(false),
         },
     );
 

@@ -127,15 +127,7 @@ pub fn transaction_filter() -> SubscribeRequest {
     );
 
     SubscribeRequest {
-        slots: HashMap::new(),
-        accounts: HashMap::new(),
         transactions: trnasactions_subs,
-        entry: Default::default(),
-        blocks: Default::default(),
-        blocks_meta: HashMap::new(),
-        commitment: None,
-        accounts_data_slice: Default::default(),
-        ping: None,
-        transactions_status: Default::default(),
+        ..SubscribeRequest::default()
     }
 }

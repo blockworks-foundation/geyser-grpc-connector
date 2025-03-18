@@ -278,20 +278,15 @@ pub fn token_accounts() -> SubscribeRequest {
         "client".to_string(),
         SubscribeRequestFilterSlots {
             filter_by_commitment: Some(true),
+            interslot_updates: Some(false),
         },
     );
 
     SubscribeRequest {
         slots: slots_subs,
         accounts: accounts_subs,
-        transactions: HashMap::new(),
-        entry: Default::default(),
-        blocks: Default::default(),
-        blocks_meta: HashMap::new(),
         commitment: Some(map_commitment_level(CommitmentConfig::processed()).into()),
-        accounts_data_slice: Default::default(),
-        ping: None,
-        transactions_status: Default::default(),
+        ..SubscribeRequest::default()
     }
 }
 
@@ -316,19 +311,14 @@ pub fn token_accounts_finalized() -> SubscribeRequest {
         "client".to_string(),
         SubscribeRequestFilterSlots {
             filter_by_commitment: Some(true),
+            interslot_updates: Some(false),
         },
     );
 
     SubscribeRequest {
         slots: slots_subs,
         accounts: accounts_subs,
-        transactions: HashMap::new(),
-        entry: Default::default(),
-        blocks: Default::default(),
-        blocks_meta: HashMap::new(),
         commitment: Some(map_commitment_level(CommitmentConfig::confirmed()).into()),
-        accounts_data_slice: Default::default(),
-        ping: None,
-        transactions_status: Default::default(),
+        ..SubscribeRequest::default()
     }
 }

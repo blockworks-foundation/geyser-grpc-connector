@@ -22,7 +22,6 @@ use tokio::time::{sleep};
 use tracing::warn;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeRequestFilterSlots, SubscribeUpdate};
-use yellowstone_grpc_proto::prost::Message as _;
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
 
 
@@ -80,7 +79,7 @@ pub async fn main() {
     loop {
         match blocks_rx.recv().await {
             Some(Message::GeyserSubscribeUpdate(update)) => match update.update_oneof {
-                Some(UpdateOneof::Slot(update_slot)) => {
+                Some(UpdateOneof::Slot(_update_slot)) => {
                 }
                 Some(UpdateOneof::Block(update_block)) => {
                     info!("({}) block {:?}: {} txs",
@@ -107,6 +106,7 @@ fn build_subscription(commitment_level: CommitmentLevel) -> SubscribeRequest {
         "geyser_slots".to_string(),
         SubscribeRequestFilterSlots {
             filter_by_commitment: Some(true),
+            interslot_updates: Some(false),
         },
     );
 

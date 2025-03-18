@@ -135,25 +135,12 @@ pub fn create_geyser_autoconnection_task_with_updater(
                                 FatalErrorReason::ConfigurationError,
                             )
                         }
-                        Err(GeyserGrpcBuilderError::InvalidXTokenLength(_)) => {
-                            ConnectionState::FatalError(
-                                attempt + 1,
-                                FatalErrorReason::ConfigurationError,
-                            )
-                        }
                         Err(GeyserGrpcBuilderError::TonicError(tonic_error)) => {
                             warn!(
                                 "connect failed on {} - aborting: {:?}",
                                 grpc_source, tonic_error
                             );
                             ConnectionState::FatalError(attempt + 1, FatalErrorReason::NetworkError)
-                        }
-                        Err(GeyserGrpcBuilderError::EmptyChannel) => {
-                            warn!(
-                                "connect failed on {} - tonic::transport::Channel should be created, use `connect` or `connect_lazy` first",
-                                grpc_source,
-                            );
-                            ConnectionState::RecoverableConnectionError(attempt + 1)
                         }
                     };
 

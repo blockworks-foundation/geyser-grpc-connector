@@ -231,6 +231,7 @@ fn all_slots_and_processed_accounts_together() -> SubscribeRequest {
         SubscribeRequestFilterSlots {
             // implies all slots
             filter_by_commitment: None,
+            interslot_updates: Some(false),
         },
     );
 
