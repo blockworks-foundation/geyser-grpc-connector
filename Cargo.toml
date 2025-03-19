@@ -1,6 +1,6 @@
 [package]
 name = "geyser-grpc-connector"
-version = "0.11.0+yellowstone.2.0.0"
+version = "0.12.1+yellowstone.3.0.0-solana.2.0"
 edition = "2021"
 
 description = "Multiplexing and Reconnection on Yellowstone gRPC Geyser client streaming"
