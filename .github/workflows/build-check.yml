@@ -13,7 +13,7 @@ jobs:
 
       - name: Set rust version
         run: |
-          source ci/rust-version.sh
+          export rust_stable=1.81.0
           echo "RUST_STABLE=$rust_stable" | tee -a $GITHUB_ENV
 
       # The toolchain action should definitely be run before the cache action
