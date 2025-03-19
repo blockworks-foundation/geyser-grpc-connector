@@ -1,4 +1,5 @@
 use std::env;
+use std::fmt::Display;
 use std::future::Future;
 use std::time::Duration;
 
@@ -97,6 +98,15 @@ pub fn create_geyser_autoconnection_task_with_updater(
     )
 }
 
+#[derive(Clone)]
+pub struct LogTag(pub String);
+
+impl Display for LogTag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, ", tag={}", self.0)
+    }
+}
+
 /// connect to grpc source performing autoconnect if required,
 /// returns mpsc channel; task will abort on fatal error
 /// will shut down when receiver is dropped
@@ -108,11 +118,11 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
     mpsc_downstream: mpsc::Sender<Message>,
     mut exit_notify: broadcast::Receiver<()>,
     mut subscribe_filter_update_rx: Option<mpsc::Receiver<SubscribeRequest>>,
-    log_tag: &Option<String>,
+    log_tag: &Option<LogTag>,
 ) -> JoinHandle<()> {
     let log_tag = log_tag
         .as_ref()
-        .map(|tag| format!(", tag={}", tag))
+        .map(|tag| format!("{}", tag))
         .unwrap_or("".to_string());
 
     // task will be aborted when downstream receiver gets dropped
