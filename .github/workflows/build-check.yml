@@ -11,15 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set rust version
-        run: |
-          source ci/rust-version.sh
-          echo "RUST_STABLE=$rust_stable" | tee -a $GITHUB_ENV
-
       # The toolchain action should definitely be run before the cache action
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: ${{ env.RUST_STABLE }}
           components: rustfmt, clippy
           cache: false
           # avoid the default "-D warnings" which thrashes cache
