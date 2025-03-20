@@ -14,7 +14,7 @@ yellowstone-grpc-client = { version = "5.0.0", git = "https://github.com/rpcpool
 yellowstone-grpc-proto = { version = "5.0.0", git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v5.0.1+solana.2.1.11" }
 
 # required for CommitmentConfig
-solana-sdk = "~2.1.11"
+solana-sdk = { version = "~2.1.11", default-features = false }
 
 url = "2.5.0"
 async-stream = "0.3.5"
