@@ -31,7 +31,7 @@ pub fn create_geyser_reconnecting_stream(
     let mut state = ConnectionState::NotConnected(1);
 
     // in case of cancellation, we restart from here:
-    // thus we want to keep the progression in a state object outside the stream! makro
+    // thus we want to keep the progression in a state object outside the stream! macro
     let the_stream = stream! {
         loop {
             let yield_value;
@@ -82,11 +82,11 @@ pub fn create_geyser_reconnecting_stream(
                         Ok(Ok(subscribed_stream)) => (ConnectionState::Ready(subscribed_stream), Message::Connecting(attempt)),
                         Ok(Err(geyser_error)) => {
                              // ATM we consider all errors recoverable
-                            warn!("subscribe failed on {} - retrying: {:?}", grpc_source, geyser_error);
+                            warn!("subscribe failed on {} - retrying: {:#}", grpc_source, geyser_error);
                             (ConnectionState::WaitReconnect(attempt + 1), Message::Connecting(attempt))
                         },
                         Err(geyser_grpc_task_error) => {
-                            warn!("connection task aborted on {} - retrying: {:?}", grpc_source, geyser_grpc_task_error);
+                            warn!("connection task aborted on {} - retrying: {:#}", grpc_source, geyser_grpc_task_error);
                             (ConnectionState::WaitReconnect(attempt + 1), Message::Connecting(attempt))
                         }
                     }
@@ -102,7 +102,7 @@ pub fn create_geyser_reconnecting_stream(
                         }
                         Ok(Some(Err(tonic_status))) => {
                             // ATM we consider all errors recoverable
-                            warn!("error on {} - retrying: {:?}", grpc_source, tonic_status);
+                            warn!("error on {} - retrying: {:#}", grpc_source, tonic_status);
                             (ConnectionState::WaitReconnect(1), Message::Connecting(1))
                         }
                         Ok(None) =>  {

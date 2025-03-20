@@ -103,7 +103,7 @@ pub struct LogTag(pub String);
 
 impl Display for LogTag {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, ", tag={}", self.0)
+        write!(f, "tag={}", self.0)
     }
 }
 
@@ -122,7 +122,7 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
 ) -> JoinHandle<()> {
     let log_tag = log_tag
         .as_ref()
-        .map(|tag| format!("{}", tag))
+        .map(|tag| format!(", {}", tag))
         .unwrap_or("".to_string());
 
     // task will be aborted when downstream receiver gets dropped
@@ -151,7 +151,7 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
                         } else {
                             Level::Debug
                         },
-                        "Connecting attempt {} to {}{}",
+                        "Connection attempt: to={}, attempt={}{}",
                         attempt,
                         addr,
                         log_tag
@@ -159,7 +159,10 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
 
                     // let buffer_config = yellowstone_grpc_util::GeyserGrpcClientBufferConfig::optimize_for_subscription(&subscribe_filter);
                     let buffer_config = buffer_config_from_env();
-                    debug!("Using Grpc Buffer config {:?}{}", buffer_config, log_tag);
+                    debug!(
+                        "Using Grpc Buffer config: config={:?}{}",
+                        buffer_config, log_tag
+                    );
 
                     let connection_handler = |connect_result| match connect_result {
                         Ok(client) => ConnectionState::Connecting(attempt, client),
@@ -177,7 +180,7 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
                         }
                         Err(GeyserGrpcBuilderError::TonicError(tonic_error)) => {
                             warn!(
-                                "connect failed on {} - aborting: {:?}{}",
+                                "connect failed - aborting: to={}, error={:#}{}",
                                 grpc_source, tonic_error, log_tag
                             );
                             ConnectionState::FatalError(attempt + 1, FatalErrorReason::NetworkError)
@@ -212,7 +215,7 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
                         grpc_source.timeouts.as_ref().map(|t| t.subscribe_timeout);
                     let subscribe_filter_on_connect = subscribe_filter_on_connect.clone();
                     debug!(
-                        "Subscribe initially with filter {:?}{}",
+                        "Subscribe initially: filter={:?}{}",
                         subscribe_filter_on_connect, log_tag
                     );
 
@@ -229,7 +232,7 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
                                         Ok((geyser_subscribe_tx, geyser_stream)) => {
                                             if attempt > 1 {
                                                 debug!(
-                                                    "Subscribed to {} after {} failed attempts{}",
+                                                    "Subscribed after failed attempts: to={}, attempt={}{}",
                                                     grpc_source, attempt, log_tag
                                                 );
                                             }
@@ -238,17 +241,17 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
                                                 geyser_subscribe_tx,
                                             )
                                         }
-                                        Err(GeyserGrpcClientError::TonicStatus(_)) => {
+                                        Err(GeyserGrpcClientError::TonicStatus(status)) => {
                                             warn!(
-                                            "subscribe failed on {} after {} attempts - retrying{}",
-                                            grpc_source, attempt, log_tag
+                                            "subscribe failed after attempts - retrying: to={}, attempt={}, status={:#}{}",
+                                            grpc_source, attempt, status, log_tag
                                         );
                                             ConnectionState::RecoverableConnectionError(attempt + 1)
                                         }
                                         // non-recoverable
                                         Err(unrecoverable_error) => {
                                             error!(
-                                            "subscribe to {} failed with unrecoverable error: {}{}",
+                                            "subscribe failed with unrecoverable error: to={}, error={:#}{}",
                                             grpc_source, unrecoverable_error, log_tag
                                         );
                                             ConnectionState::FatalError(
@@ -260,7 +263,7 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
                                 }
                                 Err(_elapsed) => {
                                     warn!(
-                                        "subscribe failed with timeout on {} - retrying{}",
+                                        "subscribe failed with timeout - retrying: to={}{}",
                                         grpc_source, log_tag
                                     );
                                     ConnectionState::RecoverableConnectionError(attempt + 1)
@@ -273,8 +276,8 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
                 ConnectionState::RecoverableConnectionError(attempt) => {
                     let backoff_secs = 1.5_f32.powi(attempt as i32).min(15.0);
                     info!(
-                        "waiting {} seconds, then reconnect to {}{}",
-                        backoff_secs, grpc_source, log_tag
+                        "waiting after connection error, then reconnecting: wait_secs={}, to={}, attempt={}{}",
+                        backoff_secs, grpc_source, attempt, log_tag
                     );
 
                     let fut_sleep = sleep(Duration::from_secs_f32(backoff_secs));
@@ -305,7 +308,7 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
                 ConnectionState::WaitReconnect(attempt) => {
                     let backoff_secs = 1.5_f32.powi(attempt as i32).min(15.0);
                     info!(
-                        "waiting {} seconds, then reconnect to {}{}",
+                        "waiting, then reconnecting: wait_secs={}, to={}{}",
                         backoff_secs, grpc_source, log_tag
                     );
 
@@ -326,11 +329,8 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
                                     Ok(_) => {
                                         debug!("exit on signal{}", log_tag);
                                     }
-                                     Err(RecvError::Lagged(_)) => {
-                                        warn!("exit on signal (lag){}", log_tag);
-                                    }
-                                    Err(RecvError::Closed) => {
-                                        warn!("exit on signal (channel close){}", log_tag);
+                                    Err(recv_error) => {
+                                        warn!("exit on signal: error={:?}{}", recv_error, log_tag);
                                     }
                                 }
                                 break 'recv_loop ConnectionState::GracefulShutdown;
@@ -339,12 +339,12 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
                             client_subscribe_update = subscribe_filter_update_rx.recv() => {
                                 match client_subscribe_update {
                                     Some(subscribe_request) => {
-                                        debug!("Subscription update from client with filter {:?}{}", subscribe_request, log_tag);
+                                        debug!("Subscription update from client: filter={:?}{}", subscribe_request, log_tag);
                                         subscribe_filter_on_connect = subscribe_request.clone();
                                         // note: if the subscription is invalid, it will trigger a Tonic error:
                                         //  Status { code: InvalidArgument, message: "failed to create filter: Invalid Base58 string", source: None }
                                         if let Err(send_err) = geyser_subscribe_tx.send(subscribe_request).await {
-                                            warn!("fail to send subscription update - disconnect and retry: {}{}", send_err, log_tag);
+                                            warn!("fail to send subscription update - disconnect and retry: error={:#}{}", send_err, log_tag);
                                             break 'recv_loop ConnectionState::WaitReconnect(1);
                                         };
                                     }
@@ -361,7 +361,7 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
 
                                 match geyser_stream_res {
                                     Ok(Some(Ok(update_message))) => {
-                                        trace!("> recv update message from {}{}", grpc_source, log_tag);
+                                        trace!("> recv update message: from={}{}", grpc_source, log_tag);
                                         // note: first send never blocks as the mpsc channel has capacity 1
                                         let warning_threshold = if messages_forwarded == 1 {
                                             Duration::from_millis(3000)
@@ -389,7 +389,7 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
                                                     trace!("queued first update message{}", log_tag);
                                                 } else {
                                                     trace!(
-                                                        "queued update message {} in {:.02}ms{}",
+                                                        "queued update message: #={}, elapsed={:.02}ms{}",
                                                         messages_forwarded,
                                                         started_at.elapsed().as_secs_f32() * 1000.0,
                                                         log_tag
@@ -399,7 +399,7 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
                                             }
                                             Err(SendTimeoutError::Timeout(the_message)) => {
                                                 warn!(
-                                                    "downstream receiver did not pick up message for {}ms - keep waiting{}",
+                                                    "downstream receiver did not pick up message until timeout - keep waiting: timeout={}ms{}",
                                                     warning_threshold.as_millis(), log_tag
                                                 );
 
@@ -415,7 +415,7 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
                                                     Ok(()) => {
                                                         messages_forwarded += 1;
                                                         trace!(
-                                                            "queued delayed update message {} in {:.02}ms{}",
+                                                            "queued delayed update message: #={}, elapsed={:.02}ms{}",
                                                             messages_forwarded,
                                                             started_at.elapsed().as_secs_f32() * 1000.0,
                                                             log_tag
@@ -441,15 +441,15 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
                                     }
                                     Ok(Some(Err(tonic_status))) => {
                                         // all tonic errors are recoverable
-                                        warn!("tonic error on {} - retrying: {:?}{}", grpc_source, tonic_status, log_tag);
+                                        warn!("tonic error - retrying: source={}, status={:#}{}", grpc_source, tonic_status, log_tag);
                                         break 'recv_loop ConnectionState::WaitReconnect(1);
                                     }
                                     Ok(None) => {
-                                        warn!("geyser stream closed on {} - retrying{}", grpc_source, log_tag);
+                                        warn!("geyser stream closed - retrying: source={}{}", grpc_source, log_tag);
                                         break 'recv_loop ConnectionState::WaitReconnect(1);
                                     }
                                     Err(_elapsed) => {
-                                        warn!("timeout on {} - retrying{}", grpc_source, log_tag);
+                                        warn!("timeout - retrying: source={}{}", grpc_source, log_tag);
                                         break 'recv_loop ConnectionState::WaitReconnect(1);
                                     }
                                 }; // -- END match
@@ -460,7 +460,7 @@ pub fn create_geyser_autoconnection_task_with_log_tag(
                 }
                 ConnectionState::GracefulShutdown => {
                     debug!(
-                        "shutting down {} gracefully on exit signal{}",
+                        "shutting down gracefully on exit signal: source={}{}",
                         grpc_source, log_tag
                     );
                     break 'main_loop;
@@ -522,11 +522,8 @@ where
                 Ok(_) => {
                     debug!("exit on signal{}", log_tag);
                 }
-                Err(RecvError::Lagged(_)) => {
-                    warn!("exit on signal (lag){}", log_tag);
-                }
-                Err(RecvError::Closed) => {
-                    warn!("exit on signal (channel close){}", log_tag);
+                Err(recv_error) => {
+                    warn!("exit on signal: error={:?}{}", recv_error, log_tag);
                 }
             }
             MaybeExit::Exit
