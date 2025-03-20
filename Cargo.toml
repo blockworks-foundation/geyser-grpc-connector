@@ -27,7 +27,7 @@ log = "0.4.17"
 tracing = "0.1.37"
 itertools = "0.10.5"
 
-tonic = { version = "0.12", features = ["tls", "tls-native-roots"] }
+tonic = "0.12"
 tonic-health = "0.12"
 
 [dev-dependencies]
