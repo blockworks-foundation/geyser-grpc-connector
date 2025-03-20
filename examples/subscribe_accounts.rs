@@ -19,6 +19,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
 use geyser_grpc_connector::{GrpcConnectionTimeouts, GrpcSourceConfig, Message};
 use tokio::time::{sleep, Duration};
+use tonic::transport::ClientTlsConfig;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{
     SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterBlocksMeta,
@@ -49,7 +50,8 @@ pub async fn main() {
         receive_timeout: Duration::from_secs(25),
     };
 
-    let config = GrpcSourceConfig::new(grpc_addr, grpc_x_token, None, timeouts.clone());
+    let tls_config = ClientTlsConfig::new().with_native_roots();
+    let config = GrpcSourceConfig::new(grpc_addr, grpc_x_token, Some(tls_config), timeouts.clone());
 
     let (autoconnect_tx, geyser_messages_rx) = tokio::sync::mpsc::channel(10);
     let (_exit_tx, exit_rx) = tokio::sync::broadcast::channel::<()>(1);
