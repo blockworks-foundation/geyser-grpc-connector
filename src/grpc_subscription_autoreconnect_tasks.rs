@@ -467,7 +467,7 @@ fn buffer_config_from_env() -> GeyserGrpcClientBufferConfig {
         || env::var("CONN_WINDOW").is_err()
         || env::var("STREAM_WINDOW").is_err()
     {
-        warn!("BUFFER_SIZE, CONN_WINDOW, STREAM_WINDOW not set; using default buffer config");
+        debug!("BUFFER_SIZE, CONN_WINDOW, STREAM_WINDOW not set; using default buffer config");
         return GeyserGrpcClientBufferConfig::default();
     }
 
