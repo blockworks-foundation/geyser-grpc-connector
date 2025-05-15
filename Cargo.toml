@@ -9,12 +9,11 @@ authors = ["GroovieGermanikus <groovie@mango.markets>"]
 repository = "https://github.com/blockworks-foundation/geyser-grpc-connector"
 
 [dependencies]
-# note: as timewriting there are versions 3.0.0 and 4.0.0; we will come back to that later
-yellowstone-grpc-client = { version = "5.0.0", git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v5.0.1+solana.2.1.11" }
-yellowstone-grpc-proto = { version = "5.0.0", git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v5.0.1+solana.2.1.11" }
+yellowstone-grpc-client = { version = "6.0.0", git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v6.0.0+solana.2.2.12" }
+yellowstone-grpc-proto = { version = "6.0.0", git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v6.0.0+solana.2.2.12" }
 
 # required for CommitmentConfig
-solana-sdk = "~2.1.11"
+solana-sdk = "~2.2.2"
 
 url = "2.5.0"
 async-stream = "0.3.5"
@@ -33,7 +32,7 @@ tonic-health = "0.12"
 [dev-dependencies]
 tracing-subscriber = "0.3.16"
 solana-logger = "2"
-solana-account-decoder = "~2.1.11"
+solana-account-decoder = "~2.2.7"
 
 base64 = "0.21.5"
 bincode = "1.3.3"

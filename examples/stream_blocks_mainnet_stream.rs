@@ -17,6 +17,7 @@ use solana_sdk::signature::Signature;
 use solana_sdk::transaction::TransactionError;
 /// This file mocks the core model of the RPC server.
 use solana_sdk::{borsh1, compute_budget};
+use solana_sdk::blake3::HASH_BYTES;
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
@@ -260,7 +261,7 @@ pub fn map_produced_block(
                         Pubkey::new_from_array(bytes)
                     })
                     .collect(),
-                recent_blockhash: Hash::new(&message.recent_blockhash),
+                recent_blockhash: Hash::new_from_array(<[u8; HASH_BYTES]>::try_from(message.recent_blockhash.as_slice()).unwrap()),
                 instructions: message
                     .instructions
                     .into_iter()
