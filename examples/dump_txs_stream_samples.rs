@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::env;
-
+use itertools::Itertools;
 use log::info;
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
+use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
 use tokio::sync::broadcast;
 use tokio::time::Duration;
@@ -42,7 +43,7 @@ pub async fn main() {
     let (autoconnect_tx, mut transactions_rx) = tokio::sync::mpsc::channel(10);
     let _tx_source_ah = create_geyser_autoconnection_task_with_mpsc(
         green_config.clone(),
-        jupyter_trades(),
+        jupyter_and_dflow_trades(),
         autoconnect_tx.clone(),
         exit_notify,
     );
@@ -54,7 +55,23 @@ pub async fn main() {
                 Some(UpdateOneof::Transaction(update)) => {
                     let tx = update.transaction.unwrap();
                     let sig = Signature::try_from(tx.signature.as_slice()).unwrap();
-                    info!("tx {}", sig);
+                    let account_keys =
+                        tx.transaction.unwrap().message.unwrap()
+                            .account_keys
+                            .into_iter()
+                            .map(|key| {
+                                let bytes: [u8; 32] =
+                                    key.try_into().unwrap_or(Pubkey::default().to_bytes());
+                                Pubkey::new_from_array(bytes)
+                            })
+                            .collect_vec();
+                    let is_jup = account_keys.iter().any(|key| {
+                        key.to_string() == "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4"
+                    });
+                    let is_dflow = account_keys.iter().any(|key| {
+                        key.to_string() == "DF1ow4tspfHX9JwWJsAb9epbkA8hmpSEAtxXy1V27QBH"
+                    });
+                    info!("tx {} ({},{})", sig, is_jup, is_dflow);
                 }
                 _ => unimplemented!(),
             }
@@ -62,7 +79,7 @@ pub async fn main() {
     }
 }
 
-fn jupyter_trades() -> SubscribeRequest {
+fn jupyter_and_dflow_trades() -> SubscribeRequest {
     let mut transaction_subs = HashMap::new();
     transaction_subs.insert(
         "client".to_string(),
@@ -70,7 +87,9 @@ fn jupyter_trades() -> SubscribeRequest {
             vote: Some(false),
             failed: Some(false),
             signature: None,
-            account_include: vec!["JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4".to_string()],
+            account_include: vec![
+                "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4".to_string(),
+                "DF1ow4tspfHX9JwWJsAb9epbkA8hmpSEAtxXy1V27QBH".to_string(),],
             account_exclude: vec![],
             account_required: vec![],
         },
