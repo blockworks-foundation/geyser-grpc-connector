@@ -21,10 +21,9 @@ use geyser_grpc_connector::{GrpcConnectionTimeouts, GrpcSourceConfig, Message};
 use tokio::time::{sleep, Duration};
 use tonic::transport::ClientTlsConfig;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::geyser::{
-    SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterBlocksMeta,
-    SubscribeRequestFilterSlots,
-};
+use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterAccountsFilter, SubscribeRequestFilterAccountsFilterMemcmp, SubscribeRequestFilterBlocksMeta, SubscribeRequestFilterSlots};
+use yellowstone_grpc_proto::geyser::subscribe_request_filter_accounts_filter::Filter::Memcmp;
+use yellowstone_grpc_proto::geyser::subscribe_request_filter_accounts_filter_memcmp::Data::Base58;
 
 type AtomicSlot = Arc<AtomicU64>;
 
@@ -60,7 +59,7 @@ pub async fn main() {
 
     let _jh = create_geyser_autoconnection_task_with_mpsc(
         config.clone(),
-        jito2_account(),
+        drift_subscription(),
         autoconnect_tx.clone(),
         exit_rx.resubscribe(),
     );
@@ -100,8 +99,8 @@ fn start_tracking_account_consumer(
                         let account_receive_time = get_epoch_sec();
 
                         info!(
-                            "Account update: slot: {}, account_pk: {}, account_owner_pk: {}, account_receive_time: {}",
-                            slot, account_pk, account_owner_pk, account_receive_time
+                            "Account update: slot: {}, account_pk: {}, account_owner_pk: {}, account_receive_time: {}, data.len: {}",
+                            slot, account_pk, account_owner_pk, account_receive_time, account_info.data.len()
                         );
                     }
                     None => {}
@@ -247,13 +246,14 @@ pub fn jito1_account() -> SubscribeRequest {
 
 pub fn jito2_account() -> SubscribeRequest {
     // Jito2
-    let account = Pubkey::from_str("A4hyMd3FyvUJSRafDUSwtLLaQcxRP4r1BRC9w2AJ1to2").unwrap();
+    // let account = Pubkey::from_str("A4hyMd3FyvUJSRafDUSwtLLaQcxRP4r1BRC9w2AJ1to2").unwrap();
 
     let mut accounts_subs = HashMap::new();
     accounts_subs.insert(
         "client".to_string(),
         SubscribeRequestFilterAccounts {
-            account: vec![account.to_string()],
+            // account: vec![account.to_string()],
+            account: vec![],
             owner: vec![],
             filters: vec![],
             nonempty_txn_signature: None,
@@ -299,3 +299,56 @@ pub fn slots() -> SubscribeRequest {
         ..Default::default()
     }
 }
+
+pub fn drift_subscription() -> SubscribeRequest {
+    let slots = HashMap::from([(
+        "geyser_tracker_slots_all_levels".to_string(),
+        SubscribeRequestFilterSlots {
+            filter_by_commitment: None,
+            // do not send "new" slot status like FirstShredReceived but only Processed, Confirmed, Finalized
+            interslot_updates: Some(false),
+        },
+    )]);
+
+    let drift_only = std::env::var("DEVMODE_FILTER_DRIFT_ONLY").is_ok();
+
+    let (accounts, transactions) = {
+        let accounts_whitelist = vec!["dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH".to_string()];
+
+        // all accounts with commitment level "processed"
+        // bs58.encode(BorshAccountsCoder.accountDiscriminator('User'))
+        let user_discriminator = "TfwwBiNJtao";
+        let drift_accounts = HashMap::from([(
+            "geyser_tracker_accounts".to_string(),
+            SubscribeRequestFilterAccounts {
+                account: vec![],
+                owner: accounts_whitelist,
+                filters: vec![SubscribeRequestFilterAccountsFilter {
+                    filter: Some(Memcmp(SubscribeRequestFilterAccountsFilterMemcmp {
+                        offset: 0,
+                        data: Some(Base58(user_discriminator.to_string())),
+                    })),
+                }],
+                nonempty_txn_signature: None,
+            },
+        )]);
+        (drift_accounts, HashMap::default())
+    };
+
+    // required by yellowstone reconstruction logic
+    // commitment level "processed"
+    let blocks_meta = HashMap::from([(
+        "geyser_tracker_blocks_meta".to_string(),
+        SubscribeRequestFilterBlocksMeta {},
+    )]);
+
+    SubscribeRequest {
+        accounts,
+        slots,
+        transactions,
+        blocks_meta,
+        commitment: Some(yellowstone_grpc_proto::geyser::CommitmentLevel::Processed as i32),
+        ..Default::default()
+    }
+}
+
