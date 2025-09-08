@@ -4,7 +4,7 @@
 // ```
 //
 
-use log::info;
+use log::{info, trace};
 use solana_account_decoder::parse_token::spl_token_ids;
 use solana_sdk::clock::{Slot, UnixTimestamp};
 use solana_sdk::pubkey::Pubkey;
@@ -79,8 +79,15 @@ fn start_tracking_account_consumer(
 ) {
     tokio::spawn(async move {
 
+        let mut total_bytes_received: u64 = 0;
+        let mut blacklisted_bytes: u64 = 0;
+
         let mut size_per_pubkey: HashMap<Pubkey, u64> = HashMap::new();
+        // use with size_per_pubkey
         let mut owner_by_pubkey: HashMap<Pubkey, Pubkey> = HashMap::new();
+
+        let mut size_per_owner: HashMap<Pubkey, u64> = HashMap::new();
+
         let mut last_prune: Slot = 0;
         let mut last_print: Slot = 0;
 
@@ -95,18 +102,27 @@ fn start_tracking_account_consumer(
                         let account_owner_pk_str = account_owner_pk.to_string();
                         let slot = update.slot;
 
-                        if exclude_from_analysis(&account_pk_str, &account_owner_pk_str) {
+                        total_bytes_received += account_info.data.len() as u64;
+
+
+                        // TODO
+                        if is_blacklisted( &account_pk_str, &account_owner_pk_str) {
+                            blacklisted_bytes += account_info.data.len() as u64;
+                        }
+
+                        // if exclude_from_analysis(&account_pk_str, &account_owner_pk_str) {
                             // info!(
                             //     "WHITELIST Account update: slot: {}, account_pk: {}, account_owner_pk: {}, data.len: {}",
                             //     slot, account_pk, account_owner_pk, account_info.data.len()
                             // );
-                            continue 'stream_loop;
-                        }
+                            // continue 'stream_loop;
+                        // }
 
                         if slot > last_prune + 100 {
                             last_prune = slot;
                             // prune small accounts
                             size_per_pubkey.retain(|_k, v| *v > 10_000);
+                            size_per_owner.retain(|_k, v| *v > 500_000);
                         }
 
                         // info!("Account update: slot: {}, account_pk: {}, account_owner_pk: {}, data.len: {}",
@@ -119,19 +135,41 @@ fn start_tracking_account_consumer(
                             );
                         }
 
-                        size_per_pubkey.entry(account_pk)
-                            .and_modify(|e| *e += account_info.data.len() as u64)
-                            .or_insert(account_info.data.len() as u64);
-                        owner_by_pubkey.entry(account_pk).or_insert(account_owner_pk);
+                        {
+                            size_per_pubkey.entry(account_pk)
+                                .and_modify(|e| *e += account_info.data.len() as u64)
+                                .or_insert(account_info.data.len() as u64);
+                            owner_by_pubkey.entry(account_pk).or_insert(account_owner_pk);
+                        }
+
+                        {
+                            size_per_owner.entry(account_owner_pk)
+                                .and_modify(|e| *e += account_info.data.len() as u64)
+                                .or_insert(account_info.data.len() as u64);
+                        }
 
                         // dump
                         if slot > last_print + 10 {
                             last_print = slot;
+
+                            if total_bytes_received > 0 {
+                                info!("--- slot: {}, {:.0}%,  total bytes received: {}, blacklisted bytes: {}",
+                                    slot,
+                                    (100 * blacklisted_bytes) / total_bytes_received,
+                                    total_bytes_received, blacklisted_bytes
+                                );
+                            }
+
                             info!("Top accounts by size (total {}):", size_per_pubkey.len());
                             let dump_started_at = Instant::now();
                             for (pk, size) in size_per_pubkey.iter().sorted_by(|a, b| b.1.cmp(a.1)).take(10) {
                                 let owner = owner_by_pubkey.get(pk).unwrap();
                                 info!("  {} (owner {}): {}", pk, owner, size);
+                            };
+
+                            info!("Top owners by size (total {}):", size_per_owner.len());
+                            for (owner, size) in size_per_owner.iter().sorted_by(|a, b| b.1.cmp(a.1)).take(10) {
+                                info!("  {}: {}", owner, size);
                             };
                         }
 
@@ -151,6 +189,74 @@ fn start_tracking_account_consumer(
             }
         }
     });
+}
+
+// proposed blacklist
+fn is_blacklisted(pubkey: &str, owner: &str) -> bool {
+    // - token accounts
+    //     - srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX   (openbook)
+    //     - opnb2LAfJYbRMAHHvqjCwQxanZn7ReEHp1k81EohpZb (openbook v2)
+    //     - Stake11111111111111111111111111111111111111
+    //     - 4DoNfFBfF7UokCC2FQzriy7yHK6DY6NVdYpuekQ5pRgg Phoenix (WSOL-USDC) Market, 1.7 MB
+    //     - Ew3vFDdtdGrknJAVVfraxCA37uNJtimXYPY4QjnfhFHH Phoenix (WETH-USDC) Market, 1.7 MB
+    //     - PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY
+    //     - LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo  Meteora DLMM Program
+    //     - 9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin Serum DEX V3
+    let pubkey_blacklist = vec![
+    ];
+    let owner_blacklist = vec![
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+        // OpenBook
+        "srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX",
+        // OpenBook V2
+        "opnb2LAfJYbRMAHHvqjCwQxanZn7ReEHp1k81EohpZb",
+        "Stake11111111111111111111111111111111111111",
+        // Phoenix (Phoenix Markets like WETH-USDC)
+        "PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY",
+        // Meteora DLMM Program
+        "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+        // Serum DEX V3
+        "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin",
+        // Metaplex Token Metadata
+        "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
+        // Jito Tip Distribution
+        "4R3gSG8BpU4t19KYj8CfnbtRpnT8gtk4dvTHxVRwc2r7",
+        // Kamino
+        "HFn8GnPADiny6XqUoWE8uRPPxb29ikn4yTuPa9MF2fWJ",
+        // BPF Loader
+        "BPFLoader2111111111111111111111111111111111",
+        "BPFLoaderUpgradeab1e11111111111111111111111",
+        // Vote program
+        "Vote111111111111111111111111111111111111111",
+        // Raydium Concentrated Liquidity
+        "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+    ];
+
+    let blacklisted_by_pubkey = pubkey_blacklist.contains(&pubkey);
+    let blacklisted_by_owner = owner_blacklist.contains(&owner);
+
+    if owner_blacklist.contains(&pubkey) && owner != "BPFLoader2111111111111111111111111111111111" && owner != "BPFLoaderUpgradeab1e11111111111111111111111" {
+        // this is an error in the blacklist definition
+        panic!("BLACKLIST key is NOT a pubkey - Account: {}, owner: {}", pubkey, owner);
+    }
+
+    if pubkey_blacklist.contains(&owner) {
+        // this is an error in the blacklist definition
+        panic!("BLACKLIST pubkey is NOT an owner - Account: {}, owner: {}", pubkey, owner);
+    }
+
+    if blacklisted_by_pubkey {
+        trace!("BLACKLISTED by pubkey - Account: {}, owner: {}", pubkey, owner);
+        return true;
+    }
+
+    if blacklisted_by_owner {
+        trace!("BLACKLISTED by owner - Account: {}, owner: {}", pubkey, owner);
+        return true;
+    }
+
+    return false;
 }
 
 // don't include these well known accounts into analysis
